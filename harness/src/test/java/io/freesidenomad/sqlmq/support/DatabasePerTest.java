@@ -7,6 +7,9 @@ import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.ExtensionContext.Namespace;
+import org.junit.jupiter.api.extension.ParameterContext;
+import org.junit.jupiter.api.extension.ParameterResolutionException;
+import org.junit.jupiter.api.extension.ParameterResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,7 +25,7 @@ import java.util.UUID;
  * Use via: @ExtendWith(DatabasePerTest.class) on the test class.
  * Retrieve the DataSource via DatabasePerTest.dataSource(ctx).
  */
-public final class DatabasePerTest implements BeforeAllCallback, AfterAllCallback {
+public final class DatabasePerTest implements BeforeAllCallback, AfterAllCallback, ParameterResolver {
 
     private static final Logger log = LoggerFactory.getLogger(DatabasePerTest.class);
     private static final Namespace NS = Namespace.create(DatabasePerTest.class);
@@ -101,6 +104,26 @@ public final class DatabasePerTest implements BeforeAllCallback, AfterAllCallbac
 
     public static DataSource dataSource(ExtensionContext ctx) {
         return (DataSource) ctx.getStore(NS).get("dataSource");
+    }
+
+    @Override
+    public boolean supportsParameter(ParameterContext parameterContext, ExtensionContext extensionContext)
+            throws ParameterResolutionException {
+        Class<?> type = parameterContext.getParameter().getType();
+        return type == ExtensionContext.class || type == DataSource.class;
+    }
+
+    @Override
+    public Object resolveParameter(ParameterContext parameterContext, ExtensionContext extensionContext)
+            throws ParameterResolutionException {
+        Class<?> type = parameterContext.getParameter().getType();
+        if (type == ExtensionContext.class) {
+            return extensionContext;
+        }
+        if (type == DataSource.class) {
+            return dataSource(extensionContext);
+        }
+        throw new ParameterResolutionException("Unsupported parameter type: " + type);
     }
 
     private static void dropDatabase(org.testcontainers.containers.MSSQLServerContainer<?> container, String dbName) throws Exception {
