@@ -1,8 +1,8 @@
 package io.freesidenomad.sqlmq.concurrency;
 
 import io.freesidenomad.sqlmq.client.SqlmqClient;
-import io.freesidenomad.sqlmq.support.ConcurrencyHarness;
-import io.freesidenomad.sqlmq.support.ConcurrencyHarness.Profile;
+import io.freesidenomad.sqlmq.bench.ConcurrencyHarness;
+import io.freesidenomad.sqlmq.bench.ConcurrencyHarness.Profile;
 import io.freesidenomad.sqlmq.support.DatabasePerTest;
 import io.freesidenomad.sqlmq.support.TestQueues;
 import org.junit.jupiter.api.TestInstance;

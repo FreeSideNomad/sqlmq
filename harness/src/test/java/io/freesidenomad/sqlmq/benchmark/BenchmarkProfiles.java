@@ -1,6 +1,6 @@
 package io.freesidenomad.sqlmq.benchmark;
 
-import io.freesidenomad.sqlmq.support.ConcurrencyHarness.Profile;
+import io.freesidenomad.sqlmq.bench.ConcurrencyHarness.Profile;
 
 import java.util.List;
 

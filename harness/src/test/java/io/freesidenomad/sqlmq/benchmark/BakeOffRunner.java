@@ -1,8 +1,8 @@
 package io.freesidenomad.sqlmq.benchmark;
 
+import io.freesidenomad.sqlmq.bench.ConcurrencyHarness;
+import io.freesidenomad.sqlmq.bench.ConcurrencyHarness.Profile;
 import io.freesidenomad.sqlmq.client.SqlmqClient;
-import io.freesidenomad.sqlmq.support.ConcurrencyHarness;
-import io.freesidenomad.sqlmq.support.ConcurrencyHarness.Profile;
 import io.freesidenomad.sqlmq.support.DatabasePerTest;
 import io.freesidenomad.sqlmq.support.SqlServerContainer;
 import io.freesidenomad.sqlmq.support.TestQueues;
@@ -20,6 +20,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Legacy: kept for short bake-offs that are convenient to drive from JUnit. For
+ * production / full-matrix performance runs prefer the standalone CLI
+ * ({@code io.freesidenomad.sqlmq.bench.SqlmqBenchCli}) — it runs in its own JVM
+ * with caller-controlled heap sizing, avoiding the OOM pressure that 50
+ * accumulated workload runs put on a single surefire fork.
+ */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @ExtendWith(DatabasePerTest.class)
 class BakeOffRunner {

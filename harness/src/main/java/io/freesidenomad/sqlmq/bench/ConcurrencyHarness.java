@@ -1,4 +1,4 @@
-package io.freesidenomad.sqlmq.support;
+package io.freesidenomad.sqlmq.bench;
 
 import io.freesidenomad.sqlmq.client.SqlmqClient;
 
@@ -22,6 +22,9 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * Uses the JDK 25 preview {@link StructuredTaskScope} API (JEP 505, Fifth Preview).
  * Maven is configured with --enable-preview to compile and run this code.
+ *
+ * Lives in src/main so both the JUnit concurrency tests and the standalone CLI
+ * ({@link SqlmqBenchCli}) can use it.
  */
 public final class ConcurrencyHarness {
 

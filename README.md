@@ -48,6 +48,37 @@ research/         # Background reading on pgmq + SQL Server patterns
 docs/             # Specs and design docs
 ```
 
+## Performance benchmarking
+
+For perf testing, use the standalone CLI rather than the JUnit `BakeOffRunner`.
+The CLI runs in its own JVM with caller-controlled heap sizing, which sidesteps
+the OOM pressure that 50 accumulated workload runs put on a single surefire fork.
+
+```bash
+# Build the CLI (one-time)
+cd harness && mvn -B package -DskipTests
+
+# Run against a Testcontainers SQL Server 2022 (auto-installed)
+java -Xmx4g -jar harness/target/sqlmq-bench-cli.jar --container --profile medium
+
+# Run against a real database
+java -Xmx4g -jar harness/target/sqlmq-bench-cli.jar \
+  --jdbc-url "jdbc:sqlserver://your-host:1433;databaseName=sqlmq;encrypt=false" \
+  --jdbc-user sa --jdbc-password '<...>' \
+  --profile heavy --runs 3
+
+# Custom workload
+java -Xmx4g -jar harness/target/sqlmq-bench-cli.jar --container \
+  --producers 16 --consumers 16 --messages-per-producer 5000 \
+  --storage both --runs 5
+
+# Help
+java -jar harness/target/sqlmq-bench-cli.jar --help
+```
+
+Results land in `./bench-results/<timestamp>/` as `bench-summary.md`,
+`bench-results.json`, and `bench-results.csv`.
+
 ## Running migrations
 
 The migrations follow Flyway naming, but Flyway is not a dependency — run them with whatever migration tool you already use:
