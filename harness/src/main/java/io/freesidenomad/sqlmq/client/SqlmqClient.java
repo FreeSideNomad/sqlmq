@@ -6,7 +6,9 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
+import java.util.TimeZone;
 
 public final class SqlmqClient {
 
@@ -40,6 +42,12 @@ public final class SqlmqClient {
     }
 
     public List<QueueInfo> listQueues() throws SQLException {
+        // sqlmq.meta.created_at is DATETIME2(7) populated by SYSUTCDATETIME(), so we must
+        // tell the driver to interpret the value as UTC rather than the JVM default zone.
+        // Passing a UTC Calendar to getTimestamp does exactly that. (mssql-jdbc only
+        // supports getObject(OffsetDateTime.class) on DATETIMEOFFSET columns; on
+        // DATETIME2 it raises 'conversion from datetime2 to DATETIMEOFFSET is unsupported'.)
+        var utcCal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
         var out = new ArrayList<QueueInfo>();
         try (Connection c = ds.getConnection();
              var st = c.createStatement();
@@ -53,7 +61,7 @@ public final class SqlmqClient {
                     rs.getBoolean("is_grouped"),
                     rs.getString("payload_type"),
                     rs.getObject("max_delivery_count") == null ? null : rs.getInt("max_delivery_count"),
-                    rs.getTimestamp("created_at").toInstant()
+                    rs.getTimestamp("created_at", utcCal).toInstant()
                 ));
             }
         }

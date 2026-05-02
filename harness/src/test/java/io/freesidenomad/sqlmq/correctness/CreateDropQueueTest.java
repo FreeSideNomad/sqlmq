@@ -85,7 +85,67 @@ class CreateDropQueueTest {
     @Test
     void dropOfNonexistentFails(ExtensionContext ctx) {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
-        assertThatThrownBy(() -> client.dropQueue("nonexistent"))
+        assertThatThrownBy(() -> client.dropQueue(TestQueues.uniqueName("absent")))
             .hasMessageContaining("does not exist");
+    }
+
+    @Test
+    void rejectsEmptyName(ExtensionContext ctx) {
+        var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
+        assertThatThrownBy(() -> client.createQueue("", "ondisk", false, "json", null))
+            .hasMessageContaining("@name must be non-empty");
+    }
+
+    @Test
+    void rejectsNameWithSqlInjectionAttempt(ExtensionContext ctx) {
+        var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
+        assertThatThrownBy(() -> client.createQueue("foo]; DROP TABLE sqlmq.meta; --",
+            "ondisk", false, "json", null))
+            .hasMessageContaining("may only contain letters, digits, and underscores");
+    }
+
+    @Test
+    void rejectsNameTooLong(ExtensionContext ctx) {
+        var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
+        var longName = "q".repeat(61);
+        assertThatThrownBy(() -> client.createQueue(longName, "ondisk", false, "json", null))
+            .hasMessageContaining("60 characters or fewer");
+    }
+
+    @Test
+    void rejectsNameStartingWithDigit(ExtensionContext ctx) {
+        var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
+        assertThatThrownBy(() -> client.createQueue("1foo", "ondisk", false, "json", null))
+            .hasMessageContaining("must start with a letter or underscore");
+    }
+
+    @Test
+    void normalizesMixedCaseStorage(ExtensionContext ctx) throws SQLException {
+        var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
+        var name = TestQueues.uniqueName("q");
+        client.createQueue(name, "OnDisk", false, "json", null);
+        var info = client.listQueues().stream().filter(q -> q.name().equals(name)).findFirst().orElseThrow();
+        assertThat(info.storageType()).isEqualTo("ondisk");
+    }
+
+    @Test
+    void dropQueueRecoversOrphanedTables(ExtensionContext ctx) throws SQLException {
+        var ds = DatabasePerTest.dataSource(ctx);
+        var client = new SqlmqClient(ds);
+        var name = TestQueues.uniqueName("q");
+        // Simulate orphan: create the queue, then manually delete the meta row to mimic
+        // a half-failed create.
+        client.createQueue(name, "ondisk", false, "json", null);
+        try (var c = ds.getConnection(); var st = c.createStatement()) {
+            st.executeUpdate("DELETE FROM sqlmq.meta WHERE queue_name = '" + name + "'");
+        }
+        // drop_queue should now succeed and clean up the orphaned tables.
+        client.dropQueue(name);
+        try (var c = ds.getConnection(); var st = c.createStatement();
+             var rs = st.executeQuery(
+                 "SELECT COUNT(*) AS n FROM sys.tables WHERE name IN ('q_" + name + "', 'a_" + name + "')")) {
+            rs.next();
+            assertThat(rs.getInt("n")).isZero();
+        }
     }
 }
