@@ -82,17 +82,65 @@ public final class SqlmqClient {
 
     private long sendInternal(String queue, String msg, byte[] msgBin, String headers, int delaySeconds) throws SQLException {
         try (Connection c = ds.getConnection();
-             CallableStatement cs = c.prepareCall("{call sqlmq.send(?, ?, ?, ?, ?)}")) {
+             CallableStatement cs = c.prepareCall("{call sqlmq.send(?, ?, ?, ?, ?, ?)}")) {
             cs.setString(1, queue);
             if (msg == null) cs.setNull(2, java.sql.Types.NVARCHAR); else cs.setString(2, msg);
             if (msgBin == null) cs.setNull(3, java.sql.Types.VARBINARY); else cs.setBytes(3, msgBin);
             if (headers == null) cs.setNull(4, java.sql.Types.NVARCHAR); else cs.setString(4, headers);
             cs.setInt(5, delaySeconds);
+            cs.setNull(6, java.sql.Types.NVARCHAR);
             try (ResultSet rs = cs.executeQuery()) {
                 rs.next();
                 return rs.getLong("msg_id");
             }
         }
+    }
+
+    public long sendGrouped(String queue, String message, String groupKey) throws SQLException {
+        try (Connection c = ds.getConnection();
+             CallableStatement cs = c.prepareCall("{call sqlmq.send(?, ?, ?, ?, ?, ?)}")) {
+            cs.setString(1, queue);
+            cs.setString(2, message);
+            cs.setNull(3, java.sql.Types.VARBINARY);
+            cs.setNull(4, java.sql.Types.NVARCHAR);
+            cs.setInt(5, 0);
+            cs.setString(6, groupKey);
+            try (ResultSet rs = cs.executeQuery()) {
+                rs.next();
+                return rs.getLong("msg_id");
+            }
+        }
+    }
+
+    public List<Message> readGrouped(String queue, int vtSeconds, int maxCount) throws SQLException {
+        var out = new ArrayList<Message>();
+        try (Connection c = ds.getConnection();
+             CallableStatement cs = c.prepareCall("{call sqlmq.read_grouped(?, ?, ?)}")) {
+            cs.setString(1, queue);
+            cs.setInt(2, vtSeconds);
+            cs.setInt(3, maxCount);
+            try (ResultSet rs = cs.executeQuery()) {
+                var meta = rs.getMetaData();
+                boolean binary = false;
+                for (int i = 1; i <= meta.getColumnCount(); i++) {
+                    if ("message_bin".equalsIgnoreCase(meta.getColumnLabel(i))) { binary = true; break; }
+                }
+                var utc = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"));
+                while (rs.next()) {
+                    out.add(new Message(
+                        rs.getLong("msg_id"),
+                        rs.getInt("read_ct"),
+                        rs.getTimestamp("enqueued_at", utc).toInstant(),
+                        rs.getTimestamp("vt", utc).toInstant(),
+                        rs.getString("group_key"),
+                        binary ? null : rs.getString("message"),
+                        binary ? rs.getBytes("message_bin") : null,
+                        rs.getString("headers")
+                    ));
+                }
+            }
+        }
+        return out;
     }
 
     public List<Long> sendBatch(String queue, List<String> jsonMessages) throws SQLException {
@@ -137,6 +185,7 @@ public final class SqlmqClient {
                         rs.getInt("read_ct"),
                         rs.getTimestamp("enqueued_at", utc).toInstant(),
                         rs.getTimestamp("vt", utc).toInstant(),
+                        rs.getString("group_key"),
                         binary ? null : rs.getString("message"),
                         binary ? rs.getBytes("message_bin") : null,
                         rs.getString("headers")
@@ -200,6 +249,7 @@ public final class SqlmqClient {
                     rs.getInt("read_ct"),
                     rs.getTimestamp("enqueued_at", utc).toInstant(),
                     rs.getTimestamp("vt", utc).toInstant(),
+                    rs.getString("group_key"),
                     binary ? null : rs.getString("message"),
                     binary ? rs.getBytes("message_bin") : null,
                     rs.getString("headers")
@@ -269,7 +319,7 @@ public final class SqlmqClient {
 
     public record Message(
         long msgId, int readCt, java.time.Instant enqueuedAt, java.time.Instant vt,
-        String message, byte[] messageBin, String headers) {}
+        String groupKey, String message, byte[] messageBin, String headers) {}
 
     public record Metrics(String queueName, long queueLength, long totalMessages,
                           Integer oldestMsgAgeSeconds, long dlqCount) {}
