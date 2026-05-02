@@ -31,6 +31,14 @@ class BakeOffRunner {
     void bakeOff(ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var allRuns = new ArrayList<RunResult>();
+        // Stable timestamped output dir, set up before any runs so partial results
+        // can be flushed after each (profile, storage) pair completes. This means
+        // a crash mid-bakeoff (OOM, surefire fork timeout, etc.) still leaves
+        // recoverable median data on disk.
+        var ts = Instant.now().toString().replace(':', '-');
+        var dir = Path.of("target/bench-results", ts);
+        Files.createDirectories(dir);
+        System.out.println("Bake-off output dir: " + dir.toAbsolutePath());
 
         for (var named : BenchmarkProfiles.all()) {
             for (var storage : List.of("ondisk", "inmemory")) {
@@ -40,15 +48,17 @@ class BakeOffRunner {
                     var sample = runOnce(client, named.name(), named.profile(),
                                          named.preloadCount(), storage);
                     samples.add(sample);
-                    System.out.printf("  run %d: %.0f msgs/sec, p50=%.1fms p99=%.1fms%n",
-                        i + 1, sample.msgsPerSec(), sample.p50Ms(), sample.p99Ms());
+                    System.out.printf("  run %d: %.0f msgs/sec, p50=%.1fms p95=%.1fms p99=%.1fms delivered=%d%n",
+                        i + 1, sample.msgsPerSec(), sample.p50Ms(), sample.p95Ms(),
+                        sample.p99Ms(), sample.delivered());
                 }
                 samples.sort(java.util.Comparator.comparingDouble(RunResult::msgsPerSec));
                 allRuns.add(samples.get(2));  // median
+                writeResults(allRuns, dir);  // incremental flush after each pair
             }
         }
 
-        writeResults(allRuns);
+        writeResults(allRuns, dir);
     }
 
     private RunResult runOnce(SqlmqClient client, String profileName, Profile profile,
@@ -110,11 +120,7 @@ class BakeOffRunner {
         return sorted.get(Math.max(0, idx));
     }
 
-    private void writeResults(List<RunResult> results) throws IOException {
-        var ts = Instant.now().toString().replace(':', '-');
-        var dir = Path.of("target/bench-results", ts);
-        Files.createDirectories(dir);
-
+    private void writeResults(List<RunResult> results, Path dir) throws IOException {
         var summary = new StringBuilder();
         summary.append("# sqlmq bake-off results\n\n");
         summary.append("Container: ").append(SqlServerContainer.get().getDockerImageName()).append("\n");
