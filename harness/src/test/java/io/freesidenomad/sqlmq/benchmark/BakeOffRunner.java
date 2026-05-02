@@ -31,7 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @ExtendWith(DatabasePerTest.class)
 class BakeOffRunner {
 
-    private record RunResult(String profile, String storage, double msgsPerSec,
+    private record RunResult(String profile, String storage, double tps,
                              double p50Ms, double p95Ms, double p99Ms, int delivered) {}
 
     @Test
@@ -55,11 +55,11 @@ class BakeOffRunner {
                     var sample = runOnce(client, named.name(), named.profile(),
                                          named.preloadCount(), storage);
                     samples.add(sample);
-                    System.out.printf("  run %d: %.0f msgs/sec, p50=%.1fms p95=%.1fms p99=%.1fms delivered=%d%n",
-                        i + 1, sample.msgsPerSec(), sample.p50Ms(), sample.p95Ms(),
+                    System.out.printf("  run %d: %.0f TPS, p50=%.1fms p95=%.1fms p99=%.1fms delivered=%d%n",
+                        i + 1, sample.tps(), sample.p50Ms(), sample.p95Ms(),
                         sample.p99Ms(), sample.delivered());
                 }
-                samples.sort(java.util.Comparator.comparingDouble(RunResult::msgsPerSec));
+                samples.sort(java.util.Comparator.comparingDouble(RunResult::tps));
                 allRuns.add(samples.get(2));  // median
                 writeResults(allRuns, dir);  // incremental flush after each pair
             }
@@ -109,12 +109,12 @@ class BakeOffRunner {
 
         int delivered = result.deliveries().size();
         double seconds = elapsedNs / 1e9;
-        double mps = delivered / Math.max(seconds, 0.001);
+        double tps = delivered / Math.max(seconds, 0.001);
 
         client.dropQueue(q);
 
         return new RunResult(
-            profileName, storage, mps,
+            profileName, storage, tps,
             pct(latenciesNs, 50) / 1e6,
             pct(latenciesNs, 95) / 1e6,
             pct(latenciesNs, 99) / 1e6,
@@ -133,31 +133,31 @@ class BakeOffRunner {
         summary.append("Container: ").append(SqlServerContainer.get().getDockerImageName()).append("\n");
         summary.append("Run at: ").append(Instant.now()).append("\n\n");
         summary.append("Each row is the median of 5 runs.\n\n");
-        summary.append("| Profile | Storage | msgs/sec | p50 (ms) | p95 (ms) | p99 (ms) | delivered |\n");
-        summary.append("|---------|---------|---------:|---------:|---------:|---------:|----------:|\n");
+        summary.append("| Profile | Storage | TPS | delivered | p50 (ms) | p95 (ms) | p99 (ms) |\n");
+        summary.append("|---------|---------|----:|----------:|---------:|---------:|---------:|\n");
         for (var r : results) {
             summary.append("| ").append(r.profile()).append(" | ").append(r.storage()).append(" | ")
-                   .append(String.format("%.0f", r.msgsPerSec())).append(" | ")
+                   .append(String.format("%.0f", r.tps())).append(" | ")
+                   .append(r.delivered()).append(" | ")
                    .append(String.format("%.2f", r.p50Ms())).append(" | ")
                    .append(String.format("%.2f", r.p95Ms())).append(" | ")
-                   .append(String.format("%.2f", r.p99Ms())).append(" | ")
-                   .append(r.delivered()).append(" |\n");
+                   .append(String.format("%.2f", r.p99Ms())).append(" |\n");
         }
 
         // Side-by-side comparison: ondisk vs inmemory ratios
         summary.append("\n## ondisk vs inmemory ratios\n\n");
-        summary.append("| Profile | ondisk msgs/sec | inmemory msgs/sec | ratio | ondisk p99 | inmemory p99 |\n");
-        summary.append("|---------|----------------:|------------------:|------:|-----------:|-------------:|\n");
+        summary.append("| Profile | ondisk TPS | inmemory TPS | ratio (im/od) | ondisk p99 | inmemory p99 |\n");
+        summary.append("|---------|-----------:|-------------:|--------------:|-----------:|-------------:|\n");
         var byProfile = new java.util.LinkedHashMap<String, java.util.Map<String, RunResult>>();
         for (var r : results) byProfile.computeIfAbsent(r.profile(), k -> new java.util.HashMap<>()).put(r.storage(), r);
         for (var entry : byProfile.entrySet()) {
             var od = entry.getValue().get("ondisk");
             var im = entry.getValue().get("inmemory");
             if (od == null || im == null) continue;
-            double ratio = im.msgsPerSec() / Math.max(od.msgsPerSec(), 0.001);
+            double ratio = im.tps() / Math.max(od.tps(), 0.001);
             summary.append("| ").append(entry.getKey()).append(" | ")
-                   .append(String.format("%.0f", od.msgsPerSec())).append(" | ")
-                   .append(String.format("%.0f", im.msgsPerSec())).append(" | ")
+                   .append(String.format("%.0f", od.tps())).append(" | ")
+                   .append(String.format("%.0f", im.tps())).append(" | ")
                    .append(String.format("%.2fx", ratio)).append(" | ")
                    .append(String.format("%.2fms", od.p99Ms())).append(" | ")
                    .append(String.format("%.2fms", im.p99Ms())).append(" |\n");

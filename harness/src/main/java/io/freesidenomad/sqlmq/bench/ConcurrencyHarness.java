@@ -28,8 +28,18 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public final class ConcurrencyHarness {
 
+    /** Default message size when callers don't specify (matches the historical "{p:..,k:..}" payload size). */
+    public static final int DEFAULT_MESSAGE_SIZE_BYTES = 64;
+
     public record Profile(int producers, int consumers, int messagesPerProducer,
-                          int batchSize, int vtSeconds, long quietPeriodMs) {
+                          int batchSize, int vtSeconds, long quietPeriodMs,
+                          int messageSizeBytes) {
+        /** 6-arg compact constructor — keeps existing callers (and tests) working with the 64-byte default. */
+        public Profile(int producers, int consumers, int messagesPerProducer,
+                       int batchSize, int vtSeconds, long quietPeriodMs) {
+            this(producers, consumers, messagesPerProducer, batchSize, vtSeconds, quietPeriodMs,
+                 DEFAULT_MESSAGE_SIZE_BYTES);
+        }
         public static Profile light() { return new Profile(4, 4, 100, 10, 30, 500); }
         public static Profile medium() { return new Profile(32, 32, 1000, 10, 30, 1000); }
         public static Profile heavy() { return new Profile(256, 256, 10000, 50, 30, 2000); }
@@ -44,6 +54,28 @@ public final class ConcurrencyHarness {
         AtomicLong producerErrors,
         AtomicLong consumerErrors
     ) {}
+
+    /**
+     * Build a JSON payload of approximately {@code targetBytes} total length by padding the
+     * caller's base content with a {@code "pad":"xxxx"} field. The result is still valid JSON.
+     * If {@code targetBytes} is too small to hold the base content, returns the base unmodified.
+     */
+    public static String paddedPayload(String baseContent, int targetBytes) {
+        // baseContent is e.g. "\"p\":0,\"k\":1" — wrapped in {} below.
+        String prefix = "{" + baseContent + ",\"pad\":\"";
+        String suffix = "\"}";
+        int overhead = prefix.length() + suffix.length();
+        int padLen = targetBytes - overhead;
+        if (padLen <= 0) {
+            // Target too small for padding — fall back to the unpadded JSON.
+            return "{" + baseContent + "}";
+        }
+        var sb = new StringBuilder(targetBytes);
+        sb.append(prefix);
+        for (int i = 0; i < padLen; i++) sb.append('x');
+        sb.append(suffix);
+        return sb.toString();
+    }
 
     public static Result run(SqlmqClient client, String queue, Profile p) throws Exception {
         var deliveries = new java.util.concurrent.CopyOnWriteArrayList<Delivery>();
@@ -63,8 +95,10 @@ public final class ConcurrencyHarness {
                 scope.fork(() -> {
                     try {
                         for (int k = 0; k < p.messagesPerProducer(); k++) {
-                            long id = client.send(queue,
-                                "{\"p\":" + producerId + ",\"k\":" + k + "}", null);
+                            String payload = paddedPayload(
+                                "\"p\":" + producerId + ",\"k\":" + k,
+                                p.messageSizeBytes());
+                            long id = client.send(queue, payload, null);
                             producedIds.add(id);
                         }
                     } catch (SQLException e) {

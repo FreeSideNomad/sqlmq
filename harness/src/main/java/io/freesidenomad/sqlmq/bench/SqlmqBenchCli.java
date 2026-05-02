@@ -15,7 +15,6 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.Statement;
@@ -24,7 +23,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -38,6 +36,16 @@ import java.util.concurrent.Callable;
  * Same shape as Gatling / JMeter: a self-contained executable, parameterized via
  * CLI flags, producing reports on its own (no JUnit / surefire involvement).
  *
+ * Two run modes:
+ * <ul>
+ *   <li>Profile mode (default) — sweep {@code --profile light|medium|heavy|...} x storage,
+ *       headline metric is TPS.</li>
+ *   <li>Scan mode ({@code --scan-consumers C1,C2,...}) — preload {@code --preload N} messages,
+ *       sweep consumer count across the supplied list, measure drain TPS for each. Producers
+ *       are forced to 0 in this mode. Answers "how many consumers does it scale to before lock
+ *       overhead dominates".</li>
+ * </ul>
+ *
  * The companion JUnit {@code BakeOffRunner} is kept in test scope for short
  * smoke-style runs, but production performance work should drive this CLI in a
  * caller-sized JVM (e.g. {@code java -Xmx4g -jar harness/target/sqlmq-bench-cli.jar ...}).
@@ -47,11 +55,12 @@ import java.util.concurrent.Callable;
     mixinStandardHelpOptions = true,
     version = "sqlmq-bench 0.1.0-SNAPSHOT",
     description = {
-        "Standalone performance harness for sqlmq.",
+        "Standalone performance harness for sqlmq. TPS is the headline metric; latency is reported as secondary informational columns.",
         "",
-        "Runs a matrix of (profile x storage x runs), records throughput and",
-        "p50/p95/p99 latency, and writes bench-summary.md / bench-results.json /",
-        "bench-results.csv to --output-dir.",
+        "Default mode: a matrix of (profile x storage x runs).",
+        "Scan mode (--scan-consumers C1,C2,...): preload N messages, sweep consumer counts, report TPS-vs-consumers curve with auto peak detection.",
+        "",
+        "Reports written to --output-dir as bench-summary.md / bench-results.json / bench-results.csv.",
         "",
         "Recommended JVM sizing: java -Xmx4g -jar sqlmq-bench-cli.jar ..."
     }
@@ -97,7 +106,7 @@ public final class SqlmqBenchCli implements Callable<Integer> {
         @Option(names = "--profile", paramLabel = "NAME",
                 description = "Built-in profile (repeatable). Choices: ${COMPLETION-CANDIDATES}. " +
                               "Default: medium. Use 'custom' with --producers/--consumers/" +
-                              "--messages-per-producer to override.",
+                              "--messages-per-producer to override. Conflicts with --scan-consumers.",
                 completionCandidates = ProfileChoices.class)
         List<String> profiles;
 
@@ -117,15 +126,31 @@ public final class SqlmqBenchCli implements Callable<Integer> {
         @Option(names = "--messages-per-producer", required = true, paramLabel = "K",
                 description = "Custom workload: messages each producer sends.")
         int messagesPerProducer;
-
-        @Option(names = "--preload", paramLabel = "N", defaultValue = "0",
-                description = "Pre-load N messages BEFORE consumers start (burst pattern). " +
-                              "Most meaningful with --producers 0. Default: 0.")
-        int preload;
     }
 
     @ArgGroup(exclusive = true, multiplicity = "0..1")
     WorkloadMode workload;
+
+    @Option(names = "--scan-consumers", paramLabel = "C1,C2,...", split = ",",
+            description = "Consumer-scan mode: preload --preload messages, then sweep consumer count " +
+                          "across this comma-separated list (e.g. 1,2,4,8,16). Producers are forced to 0. " +
+                          "Conflicts with --profile / --producers / --consumers / --messages-per-producer.")
+    List<Integer> scanConsumers;
+
+    @Option(names = "--preload", paramLabel = "N", defaultValue = "0",
+            description = "In scan mode: messages to preload before each scan step (REQUIRED, default 10000 if scan mode and unspecified). " +
+                          "In custom workload mode: pre-load N messages BEFORE consumers start (burst pattern, most meaningful with --producers 0).")
+    int preload;
+
+    @Option(names = "--initial-depth", paramLabel = "N", defaultValue = "0",
+            description = "Pre-fill the queue with N messages before each non-scan run starts. " +
+                          "Use to measure throughput against a deep queue vs. an empty one. " +
+                          "Default: 0. Ignored in --scan-consumers mode (use --preload there).")
+    int initialDepth;
+
+    @Option(names = "--message-size", paramLabel = "BYTES", defaultValue = "64",
+            description = "Approximate JSON payload size in bytes; padded via a \"pad\" field. Default: ${DEFAULT-VALUE}.")
+    int messageSize;
 
     @Option(names = "--storage", paramLabel = "VARIANT",
             description = "Storage variant(s) to test (repeatable). Choices: ondisk, inmemory, both. Default: both.")
@@ -140,7 +165,7 @@ public final class SqlmqBenchCli implements Callable<Integer> {
     int vtSeconds;
 
     @Option(names = "--runs", defaultValue = "5",
-            description = "Number of runs per (profile, storage). The reported median uses these. Default: ${DEFAULT-VALUE}.")
+            description = "Number of runs per (workload, storage) cell. The reported median uses these. Default: ${DEFAULT-VALUE}.")
     int runs;
 
     @Option(names = "--quiet-period-ms", defaultValue = "1000",
@@ -170,10 +195,24 @@ public final class SqlmqBenchCli implements Callable<Integer> {
 
     @Override
     public Integer call() throws Exception {
-        // Resolve which profiles to run.
-        var resolvedProfiles = resolveProfiles();
+        boolean isScanMode = scanConsumers != null && !scanConsumers.isEmpty();
+
+        // Validate scan-mode mutual exclusion before resolving anything.
+        if (isScanMode) {
+            validateScanMode();
+        }
+
+        // Resolve workload(s) and storage.
+        var resolvedProfiles = isScanMode ? List.<NamedProfile>of() : resolveProfiles();
         var resolvedStorage = resolveStorage();
         var formats = resolveFormats();
+
+        // For scan mode, default --preload to 10000 if unspecified.
+        int effectivePreload = preload;
+        if (isScanMode && effectivePreload == 0) {
+            effectivePreload = 10_000;
+            log.info("--preload not specified in scan mode; defaulting to {}", effectivePreload);
+        }
 
         // Resolve connection mode and possibly start a container.
         BenchContainer container = null;
@@ -213,10 +252,15 @@ public final class SqlmqBenchCli implements Callable<Integer> {
                       .migrate();
             }
 
-            // Pool sized to cover the largest profile in the matrix.
-            int maxConcurrency = resolvedProfiles.stream()
-                .mapToInt(np -> np.profile().producers() + np.profile().consumers())
-                .max().orElse(64);
+            // Pool sized to cover the largest workload in the matrix.
+            int maxConcurrency;
+            if (isScanMode) {
+                maxConcurrency = scanConsumers.stream().mapToInt(Integer::intValue).max().orElse(64);
+            } else {
+                maxConcurrency = resolvedProfiles.stream()
+                    .mapToInt(np -> np.profile().producers() + np.profile().consumers())
+                    .max().orElse(64);
+            }
             // Leave headroom; cap to keep DB conn count bounded.
             int poolSize = Math.min(Math.max(64, maxConcurrency + 16), 256);
 
@@ -239,29 +283,13 @@ public final class SqlmqBenchCli implements Callable<Integer> {
             var reporter = new BenchReporter(containerImage, startedAt);
 
             var stampFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
-            for (var named : resolvedProfiles) {
-                for (var stor : resolvedStorage) {
-                    if (!noProgress) {
-                        System.err.printf("=== %s/%s (%d runs) ===%n", named.name(), stor, runs);
-                    }
-                    for (int i = 1; i <= runs; i++) {
-                        var sample = BenchHarness.runOnce(client, named.name(), named.profile(),
-                                                          named.preloadCount(), stor, i);
-                        reporter.add(sample);
-                        if (!noProgress) {
-                            var stamp = LocalDateTime.now(ZoneId.systemDefault()).format(stampFmt);
-                            System.err.printf(Locale.ROOT,
-                                "[%s] %s/%s run %d/%d: %.0f msgs/sec p50=%.1fms p95=%.1fms p99=%.1fms delivered=%d elapsed=%.1fs%n",
-                                stamp, named.name(), stor, i, runs,
-                                sample.msgsPerSec(), sample.p50Ms(), sample.p95Ms(), sample.p99Ms(),
-                                sample.delivered(), sample.elapsedSeconds());
-                        }
-                        // Incremental flush after every run so a crash mid-matrix still
-                        // leaves recoverable data on disk.
-                        reporter.writeAll(outDir, formats, Instant.now());
-                    }
-                }
+
+            if (isScanMode) {
+                runScanMode(client, reporter, resolvedStorage, effectivePreload, stampFmt, outDir, formats);
+            } else {
+                runProfileMode(client, reporter, resolvedProfiles, resolvedStorage, stampFmt, outDir, formats);
             }
+
             var completedAt = Instant.now();
             reporter.writeAll(outDir, formats, completedAt);
 
@@ -275,6 +303,85 @@ public final class SqlmqBenchCli implements Callable<Integer> {
             }
             if (container != null) container.stop();
         }
+    }
+
+    private void validateScanMode() {
+        if (workload != null && (workload.profiles != null && !workload.profiles.isEmpty())) {
+            throw new CommandLine.ParameterException(new CommandLine(this),
+                "--scan-consumers conflicts with --profile. Drop --profile to use scan mode.");
+        }
+        if (workload != null && workload.custom != null) {
+            throw new CommandLine.ParameterException(new CommandLine(this),
+                "--scan-consumers conflicts with --producers/--consumers/--messages-per-producer. " +
+                "Scan mode forces producers=0 and sweeps consumer count via --scan-consumers.");
+        }
+        for (var c : scanConsumers) {
+            if (c <= 0) {
+                throw new CommandLine.ParameterException(new CommandLine(this),
+                    "--scan-consumers values must be positive integers; got " + c);
+            }
+        }
+        if (initialDepth > 0) {
+            log.warn("--initial-depth is ignored in --scan-consumers mode; use --preload instead.");
+        }
+    }
+
+    private void runProfileMode(SqlmqClient client, BenchReporter reporter,
+                                List<NamedProfile> resolvedProfiles, List<String> resolvedStorage,
+                                DateTimeFormatter stampFmt, java.nio.file.Path outDir, Set<String> formats)
+            throws Exception {
+        for (var named : resolvedProfiles) {
+            for (var stor : resolvedStorage) {
+                if (!noProgress) {
+                    System.err.printf("=== %s/%s (%d runs) ===%n", named.name(), stor, runs);
+                }
+                for (int i = 1; i <= runs; i++) {
+                    // For non-scan modes, --initial-depth pre-loads on top of the profile's own
+                    // preloadCount. Sum them so users can stack a profile's burst on a deep queue.
+                    int totalPreload = named.preloadCount() + initialDepth;
+                    var sample = BenchHarness.runOnce(client, named.name(), named.profile(),
+                                                      totalPreload, stor, i);
+                    reporter.add(sample);
+                    progressLine(stampFmt, named.name(), stor, i, sample);
+                    reporter.writeAll(outDir, formats, Instant.now());
+                }
+            }
+        }
+    }
+
+    private void runScanMode(SqlmqClient client, BenchReporter reporter,
+                             List<String> resolvedStorage, int effectivePreload,
+                             DateTimeFormatter stampFmt, java.nio.file.Path outDir, Set<String> formats)
+            throws Exception {
+        reporter.enableScanMode("scan");
+        // Build a base profile that supplies batch/vt/quiet/messageSize. producers/consumers/msgPerProducer
+        // are filled in by runScan per step (producers=0, messagesPerProducer=0, consumers=C).
+        var baseProfile = new Profile(0, 0, 0, batchSize, vtSeconds, quietPeriodMs, messageSize);
+        for (var stor : resolvedStorage) {
+            for (int c : scanConsumers) {
+                if (!noProgress) {
+                    System.err.printf("=== scan: consumers=%d storage=%s preload=%d msg=%dB (%d runs) ===%n",
+                                       c, stor, effectivePreload, messageSize, runs);
+                }
+                for (int i = 1; i <= runs; i++) {
+                    var sample = BenchHarness.runScan(client, "scan", baseProfile, c,
+                                                       effectivePreload, stor, i);
+                    reporter.addScan(sample);
+                    progressLine(stampFmt, "scan/c=" + c, stor, i, sample);
+                    reporter.writeAll(outDir, formats, Instant.now());
+                }
+            }
+        }
+    }
+
+    private void progressLine(DateTimeFormatter stampFmt, String label, String stor, int runIdx, RunResult sample) {
+        if (noProgress) return;
+        var stamp = LocalDateTime.now(ZoneId.systemDefault()).format(stampFmt);
+        System.err.printf(Locale.ROOT,
+            "[%s] %s/%s run %d/%d: %.0f TPS p50=%.1fms p95=%.1fms p99=%.1fms delivered=%d elapsed=%.1fs%n",
+            stamp, label, stor, runIdx, runs,
+            sample.tps(), sample.p50Ms(), sample.p95Ms(), sample.p99Ms(),
+            sample.delivered(), sample.elapsedSeconds());
     }
 
     private List<NamedProfile> resolveProfiles() {
@@ -291,14 +398,14 @@ public final class SqlmqBenchCli implements Callable<Integer> {
                 }
             }
             // --preload makes most sense with --producers 0; warn (not reject) otherwise.
-            if (workload.custom.preload > 0 && workload.custom.producers > 0) {
+            if (preload > 0 && workload.custom.producers > 0) {
                 System.err.println("Warning: --preload combined with --producers > 0 mixes burst and steady-state " +
                                    "patterns; latency numbers will be hard to interpret.");
             }
             var p = new Profile(workload.custom.producers, workload.custom.consumers,
                                 workload.custom.messagesPerProducer,
-                                batchSize, vtSeconds, quietPeriodMs);
-            return List.of(new NamedProfile("custom", p, workload.custom.preload));
+                                batchSize, vtSeconds, quietPeriodMs, messageSize);
+            return List.of(new NamedProfile("custom", p, preload));
         }
 
         // Built-in profile name(s).
@@ -317,12 +424,14 @@ public final class SqlmqBenchCli implements Callable<Integer> {
                 throw new CommandLine.ParameterException(new CommandLine(this),
                     "Unknown profile '" + n + "'. Choices: " + BenchProfiles.builtinNames() + " or 'custom'.");
             }
-            // Apply CLI overrides for batch/vt/quiet to built-in profile's Profile record.
+            // Apply CLI overrides for batch/vt/quiet/msgSize to built-in profile's Profile record.
             var base = np.profile();
             var adjusted = new Profile(base.producers(), base.consumers(), base.messagesPerProducer(),
                                        batchSize != 10 ? batchSize : base.batchSize(),
                                        vtSeconds != 30 ? vtSeconds : base.vtSeconds(),
-                                       quietPeriodMs != 1000 ? quietPeriodMs : base.quietPeriodMs());
+                                       quietPeriodMs != 1000 ? quietPeriodMs : base.quietPeriodMs(),
+                                       messageSize != ConcurrencyHarness.DEFAULT_MESSAGE_SIZE_BYTES
+                                           ? messageSize : base.messageSizeBytes());
             out.add(new NamedProfile(np.name(), adjusted, np.preloadCount()));
         }
         return out;
