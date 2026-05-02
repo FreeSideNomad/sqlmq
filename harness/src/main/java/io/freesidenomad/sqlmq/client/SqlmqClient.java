@@ -208,6 +208,61 @@ public final class SqlmqClient {
         }
     }
 
+    public Metrics metrics(String queue) throws SQLException {
+        try (Connection c = ds.getConnection();
+             CallableStatement cs = c.prepareCall("{call sqlmq.metrics(?)}")) {
+            cs.setString(1, queue);
+            try (ResultSet rs = cs.executeQuery()) {
+                rs.next();
+                return new Metrics(
+                    rs.getString("queue_name"),
+                    rs.getLong("queue_length"),
+                    rs.getLong("total_messages"),
+                    (Integer) rs.getObject("oldest_msg_age_seconds"),
+                    rs.getLong("dlq_count"));
+            }
+        }
+    }
+
+    public List<Metrics> metricsAll() throws SQLException {
+        var out = new ArrayList<Metrics>();
+        try (Connection c = ds.getConnection();
+             CallableStatement cs = c.prepareCall("{call sqlmq.metrics_all()}")) {
+            try (ResultSet rs = cs.executeQuery()) {
+                while (rs.next())
+                    out.add(new Metrics(
+                        rs.getString("queue_name"),
+                        rs.getLong("queue_length"),
+                        rs.getLong("total_messages"),
+                        (Integer) rs.getObject("oldest_msg_age_seconds"),
+                        rs.getLong("dlq_count")));
+            }
+        }
+        return out;
+    }
+
+    public int purgeQueue(String name) throws SQLException {
+        try (Connection c = ds.getConnection();
+             CallableStatement cs = c.prepareCall("{call sqlmq.purge_queue(?)}")) {
+            cs.setString(1, name);
+            try (ResultSet rs = cs.executeQuery()) {
+                rs.next();
+                return rs.getInt("rows_deleted");
+            }
+        }
+    }
+
+    public int dlqSweep(String queue) throws SQLException {
+        try (Connection c = ds.getConnection();
+             CallableStatement cs = c.prepareCall("{call sqlmq.dlq_sweep(?)}")) {
+            cs.setString(1, queue);
+            try (ResultSet rs = cs.executeQuery()) {
+                rs.next();
+                return rs.getInt("rows_swept");
+            }
+        }
+    }
+
     public record QueueInfo(
         String name, String storageType, boolean grouped, String payloadType,
         Integer maxDeliveryCount, java.time.Instant createdAt) {}
@@ -215,4 +270,7 @@ public final class SqlmqClient {
     public record Message(
         long msgId, int readCt, java.time.Instant enqueuedAt, java.time.Instant vt,
         String message, byte[] messageBin, String headers) {}
+
+    public record Metrics(String queueName, long queueLength, long totalMessages,
+                          Integer oldestMsgAgeSeconds, long dlqCount) {}
 }
