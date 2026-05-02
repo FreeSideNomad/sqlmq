@@ -112,6 +112,11 @@
                 <version>${maven.compiler.plugin.version}</version>
                 <configuration>
                     <release>25</release>
+                    <!-- StructuredTaskScope is JEP 505 (Fifth Preview) in JDK 25 — still
+                         a preview API, requires the enable-preview flag to compile. -->
+                    <compilerArgs>
+                        <arg>--enable-preview</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
             <plugin>
@@ -119,6 +124,8 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${maven.surefire.plugin.version}</version>
                 <configuration>
+                    <!-- Required to run code that uses the preview StructuredTaskScope API. -->
+                    <argLine>--enable-preview</argLine>
                     <excludes>
                         <exclude>**/benchmark/**</exclude>
                     </excludes>
