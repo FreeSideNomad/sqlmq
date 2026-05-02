@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtensionContext;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -125,5 +126,84 @@ class GroupedFifoInvariantTest {
                 .as("group %s: not all produced msg_ids were delivered", entry.getKey())
                 .containsAll(prod);
         }
+    }
+
+    @Test
+    void perGroupMsgIdOrderingIsStrictWithSingleMessageReads(ExtensionContext ctx) throws Exception {
+        var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
+        var q = TestQueues.uniqueName("q");
+        client.createQueue(q, "ondisk", true, "json", null);
+
+        int producers = 8, groups = 16, messagesPerGroupPerProducer = 50;
+        var producedPerGroup = new ConcurrentHashMap<String, List<Long>>();
+        var producersDone = new AtomicInteger();
+        var receipts = new CopyOnWriteArrayList<Receipt>();
+
+        try (var scope = StructuredTaskScope.open(
+                StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
+
+            for (int p = 0; p < producers; p++) {
+                final int producerId = p;
+                scope.fork(() -> {
+                    for (int k = 0; k < messagesPerGroupPerProducer; k++) {
+                        for (int g = 0; g < groups; g++) {
+                            String gk = "g" + g;
+                            long id = client.sendGrouped(q, "{\"p\":" + producerId + ",\"k\":" + k + "}", gk);
+                            producedPerGroup.computeIfAbsent(gk, x -> new CopyOnWriteArrayList<>()).add(id);
+                        }
+                    }
+                    producersDone.incrementAndGet();
+                    return null;
+                });
+            }
+
+            // 16 consumers, each reads one message at a time (max_count=1).
+            // Strict per-group msg_id ordering must hold even under concurrent batched
+            // commits because each consumer claims at most one msg per call.
+            int consumers = 16;
+            for (int c = 0; c < consumers; c++) {
+                scope.fork(() -> {
+                    long lastNonEmpty = System.nanoTime();
+                    while (true) {
+                        var msgs = client.readGrouped(q, 30, 1);  // max_count=1 ← key
+                        if (!msgs.isEmpty()) {
+                            long now = System.nanoTime();
+                            lastNonEmpty = now;
+                            for (var m : msgs) {
+                                receipts.add(new Receipt(m.msgId(), m.groupKey(), -1, now, now));
+                            }
+                            client.delete(q, msgs.stream().map(SqlmqClient.Message::msgId).toList());
+                        } else {
+                            if (producersDone.get() == producers &&
+                                java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - lastNonEmpty) > 2000)
+                                return null;
+                            Thread.sleep(20);
+                        }
+                    }
+                });
+            }
+            scope.join();
+        }
+
+        // Strict ordering: per group, msg_ids must be in increasing order in delivery time.
+        // Because reads are single-message AND read_grouped enforces "one in-flight per group"
+        // (with sp_getapplock serializing per queue), the delivery sequence within a group
+        // MUST equal the visibility-order of msg_ids within that group.
+        var byGroup = new java.util.HashMap<String, List<Receipt>>();
+        for (var r : receipts) byGroup.computeIfAbsent(r.groupKey(), k -> new java.util.ArrayList<>()).add(r);
+        for (var entry : byGroup.entrySet()) {
+            var rs = entry.getValue();
+            rs.sort(java.util.Comparator.comparingLong(Receipt::receivedNanos));
+            for (int i = 1; i < rs.size(); i++) {
+                assertThat(rs.get(i).msgId())
+                    .as("group %s: out-of-order delivery — msg_id %d delivered after %d",
+                        entry.getKey(), rs.get(i).msgId(), rs.get(i - 1).msgId())
+                    .isGreaterThan(rs.get(i - 1).msgId());
+            }
+        }
+
+        // Also verify no-loss for sanity.
+        int totalProduced = producedPerGroup.values().stream().mapToInt(List::size).sum();
+        assertThat(receipts).hasSize(totalProduced);
     }
 }
