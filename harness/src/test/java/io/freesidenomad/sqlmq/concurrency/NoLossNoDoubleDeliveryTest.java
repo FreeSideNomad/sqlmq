@@ -9,6 +9,7 @@ import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.stream.Stream;
@@ -19,17 +20,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExtendWith(DatabasePerTest.class)
 class NoLossNoDoubleDeliveryTest {
 
-    static Stream<Profile> profiles() {
-        return Stream.of(Profile.light(), Profile.medium());
-        // heavy() and asymmetric() left out of CI by default — opt in locally.
+    static Stream<Arguments> profilesAndStorage() {
+        // Cross-product of profiles x storage variants. heavy/asymmetric stay
+        // out of CI by default — opt in locally.
+        return Stream.of(
+            Arguments.of(Profile.light(),  "ondisk"),
+            Arguments.of(Profile.medium(), "ondisk"),
+            Arguments.of(Profile.light(),  "inmemory"),
+            Arguments.of(Profile.medium(), "inmemory")
+        );
     }
 
     @ParameterizedTest
-    @MethodSource("profiles")
-    void everyProducedMessageIsDeliveredExactlyOnce(Profile p, ExtensionContext ctx) throws Exception {
+    @MethodSource("profilesAndStorage")
+    void everyProducedMessageIsDeliveredExactlyOnce(Profile p, String storage, ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, "ondisk", false, "json", null);
+        client.createQueue(q, storage, false, "json", null);
 
         var result = ConcurrencyHarness.run(client, q, p);
 

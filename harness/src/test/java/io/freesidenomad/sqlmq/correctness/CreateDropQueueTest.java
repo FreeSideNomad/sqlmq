@@ -48,11 +48,36 @@ class CreateDropQueueTest {
     }
 
     @Test
-    void inmemoryStorageThrowsUntilV009(ExtensionContext ctx) {
+    void createsAndListsInMemoryJsonQueue(ExtensionContext ctx) throws SQLException {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var name = TestQueues.uniqueName("q");
-        assertThatThrownBy(() -> client.createQueue(name, "inmemory", false, "json", null))
-            .hasMessageContaining("In-memory storage is not implemented yet");
+        client.createQueue(name, "inmemory", false, "json", null);
+        var info = client.listQueues().stream()
+            .filter(q -> q.name().equals(name)).findFirst().orElseThrow();
+        assertThat(info.storageType()).isEqualTo("inmemory");
+        assertThat(info.payloadType()).isEqualTo("json");
+    }
+
+    @Test
+    void dropOfInMemoryQueueDropsTableAndProcs(ExtensionContext ctx) throws SQLException {
+        var ds = DatabasePerTest.dataSource(ctx);
+        var client = new SqlmqClient(ds);
+        var name = TestQueues.uniqueName("q");
+        client.createQueue(name, "inmemory", true, "json", null);
+        client.dropQueue(name);
+
+        try (var c = ds.getConnection(); var st = c.createStatement();
+             var rs = st.executeQuery(
+                 "SELECT COUNT(*) AS n FROM sys.tables WHERE name IN ('q_" + name + "', 'a_" + name + "')")) {
+            rs.next();
+            assertThat(rs.getInt("n")).isZero();
+        }
+        try (var c = ds.getConnection(); var st = c.createStatement();
+             var rs = st.executeQuery(
+                 "SELECT COUNT(*) AS n FROM sys.procedures WHERE name LIKE '%inmem_" + name + "'")) {
+            rs.next();
+            assertThat(rs.getInt("n")).isZero();
+        }
     }
 
     @Test

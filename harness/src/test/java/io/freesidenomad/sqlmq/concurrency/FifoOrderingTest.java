@@ -4,10 +4,11 @@ import io.freesidenomad.sqlmq.client.SqlmqClient;
 import io.freesidenomad.sqlmq.support.ConcurrencyHarness;
 import io.freesidenomad.sqlmq.support.DatabasePerTest;
 import io.freesidenomad.sqlmq.support.TestQueues;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.HashMap;
 
@@ -17,11 +18,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExtendWith(DatabasePerTest.class)
 class FifoOrderingTest {
 
-    @Test
-    void anySingleConsumersDeliveriesAreInIncreasingMsgIdOrder(ExtensionContext ctx) throws Exception {
+    @ParameterizedTest
+    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
+    void anySingleConsumersDeliveriesAreInIncreasingMsgIdOrder(String storage, ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, "ondisk", false, "json", null);
+        client.createQueue(q, storage, false, "json", null);
 
         var p = new ConcurrencyHarness.Profile(4, 8, 1000, 1, 30, 1000); // batch=1 so per-consumer ordering is meaningful
         var result = ConcurrencyHarness.run(client, q, p);

@@ -3,10 +3,11 @@ package io.freesidenomad.sqlmq.concurrency;
 import io.freesidenomad.sqlmq.client.SqlmqClient;
 import io.freesidenomad.sqlmq.support.DatabasePerTest;
 import io.freesidenomad.sqlmq.support.TestQueues;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.HashMap;
 import java.util.List;
@@ -24,11 +25,12 @@ class GroupedFifoInvariantTest {
     private record Receipt(long msgId, String groupKey, int consumerId,
                            long receivedNanos, long deletedNanos) {}
 
-    @Test
-    void noTwoConsumersHoldSameGroupAndPerGroupOrderingIsPreserved(ExtensionContext ctx) throws Exception {
+    @ParameterizedTest
+    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
+    void noTwoConsumersHoldSameGroupAndPerGroupOrderingIsPreserved(String storage, ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, "ondisk", true, "json", null);
+        client.createQueue(q, storage, true, "json", null);
 
         // Each producer owns a disjoint slice of groups so that, per group, msg_id order
         // equals commit/visibility order (a hard precondition for asserting strict
@@ -128,11 +130,12 @@ class GroupedFifoInvariantTest {
         }
     }
 
-    @Test
-    void perGroupMsgIdOrderingIsStrictWithSingleMessageReads(ExtensionContext ctx) throws Exception {
+    @ParameterizedTest
+    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
+    void perGroupMsgIdOrderingIsStrictWithSingleMessageReads(String storage, ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, "ondisk", true, "json", null);
+        client.createQueue(q, storage, true, "json", null);
 
         int producers = 8, groups = 16, messagesPerGroupPerProducer = 50;
         var producedPerGroup = new ConcurrentHashMap<String, List<Long>>();

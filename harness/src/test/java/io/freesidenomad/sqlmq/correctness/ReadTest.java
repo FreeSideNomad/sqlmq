@@ -3,10 +3,11 @@ package io.freesidenomad.sqlmq.correctness;
 import io.freesidenomad.sqlmq.client.SqlmqClient;
 import io.freesidenomad.sqlmq.support.DatabasePerTest;
 import io.freesidenomad.sqlmq.support.TestQueues;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.sql.SQLException;
 
@@ -16,19 +17,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExtendWith(DatabasePerTest.class)
 class ReadTest {
 
-    @Test
-    void emptyQueueReturnsEmptyList(ExtensionContext ctx) throws SQLException {
+    @ParameterizedTest
+    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
+    void emptyQueueReturnsEmptyList(String storage, ExtensionContext ctx) throws SQLException {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, "ondisk", false, "json", null);
+        client.createQueue(q, storage, false, "json", null);
         assertThat(client.read(q, 30, 10)).isEmpty();
     }
 
-    @Test
-    void readReturnsFifoOrderedMessagesAndIncrementsReadCt(ExtensionContext ctx) throws SQLException {
+    @ParameterizedTest
+    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
+    void readReturnsFifoOrderedMessagesAndIncrementsReadCt(String storage, ExtensionContext ctx) throws SQLException {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, "ondisk", false, "json", null);
+        client.createQueue(q, storage, false, "json", null);
 
         var id1 = client.send(q, "{\"v\":1}", null);
         var id2 = client.send(q, "{\"v\":2}", null);
@@ -39,11 +42,12 @@ class ReadTest {
         assertThat(msgs).allSatisfy(m -> assertThat(m.readCt()).isEqualTo(1));
     }
 
-    @Test
-    void secondReadDoesNotReturnInflightMessages(ExtensionContext ctx) throws SQLException {
+    @ParameterizedTest
+    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
+    void secondReadDoesNotReturnInflightMessages(String storage, ExtensionContext ctx) throws SQLException {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, "ondisk", false, "json", null);
+        client.createQueue(q, storage, false, "json", null);
 
         client.send(q, "{\"v\":1}", null);
         var first = client.read(q, 60, 10);
@@ -53,11 +57,12 @@ class ReadTest {
         assertThat(second).isEmpty();
     }
 
-    @Test
-    void messagesBecomeReEligibleAfterVtExpires(ExtensionContext ctx) throws Exception {
+    @ParameterizedTest
+    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
+    void messagesBecomeReEligibleAfterVtExpires(String storage, ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, "ondisk", false, "json", null);
+        client.createQueue(q, storage, false, "json", null);
 
         client.send(q, "{\"v\":1}", null);
         var first = client.read(q, 1, 10);
@@ -68,11 +73,12 @@ class ReadTest {
         assertThat(second.get(0).readCt()).isEqualTo(2);
     }
 
-    @Test
-    void delayedSendNotReadableUntilDelayElapses(ExtensionContext ctx) throws Exception {
+    @ParameterizedTest
+    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
+    void delayedSendNotReadableUntilDelayElapses(String storage, ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, "ondisk", false, "json", null);
+        client.createQueue(q, storage, false, "json", null);
 
         client.sendDelayed(q, "{\"v\":1}", null, 2);
         assertThat(client.read(q, 30, 10)).isEmpty();
