@@ -1,0 +1,126 @@
+{
+  "started_at": "2026-05-03T01:00:10.459586Z",
+  "completed_at": "2026-05-03T01:10:19.957297Z",
+  "container": null,
+  "results": [
+    {
+      "profile": "scan",
+      "storage": "ondisk",
+      "consumers": 1,
+      "samples": [
+        {"run": 1, "tps": 242.86, "delivered": 10000, "producers": 0, "consumers": 1, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 25558.95, "p95_ms": 38709.46, "p99_ms": 39920.88, "elapsed_s": 41.176, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 2, "tps": 318.54, "delivered": 10000, "producers": 0, "consumers": 1, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 15541.76, "p95_ms": 28991.70, "p99_ms": 30099.69, "elapsed_s": 31.393, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 3, "tps": 322.55, "delivered": 10000, "producers": 0, "consumers": 1, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 15279.99, "p95_ms": 28524.96, "p99_ms": 29710.92, "elapsed_s": 31.003, "producer_errors": 0, "consumer_errors": 0}
+      ],
+      "median_tps": 318.54,
+      "median_p99_ms": 30099.69
+    },
+    {
+      "profile": "scan",
+      "storage": "ondisk",
+      "consumers": 2,
+      "samples": [
+        {"run": 1, "tps": 549.28, "delivered": 10000, "producers": 0, "consumers": 2, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 8534.88, "p95_ms": 16337.87, "p99_ms": 17008.39, "elapsed_s": 18.206, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 2, "tps": 544.47, "delivered": 10000, "producers": 0, "consumers": 2, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 8847.98, "p95_ms": 16428.61, "p99_ms": 17128.31, "elapsed_s": 18.366, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 3, "tps": 569.49, "delivered": 10000, "producers": 0, "consumers": 2, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 8267.81, "p95_ms": 15651.83, "p99_ms": 16344.59, "elapsed_s": 17.560, "producer_errors": 0, "consumer_errors": 0}
+      ],
+      "median_tps": 549.28,
+      "median_p99_ms": 17008.39
+    },
+    {
+      "profile": "scan",
+      "storage": "ondisk",
+      "consumers": 4,
+      "samples": [
+        {"run": 1, "tps": 888.17, "delivered": 10000, "producers": 0, "consumers": 4, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 5265.84, "p95_ms": 9709.52, "p99_ms": 10169.92, "elapsed_s": 11.259, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 2, "tps": 870.16, "delivered": 10000, "producers": 0, "consumers": 4, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 5666.38, "p95_ms": 9987.94, "p99_ms": 10389.88, "elapsed_s": 11.492, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 3, "tps": 892.65, "delivered": 10000, "producers": 0, "consumers": 4, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 5541.70, "p95_ms": 9725.01, "p99_ms": 10135.29, "elapsed_s": 11.203, "producer_errors": 0, "consumer_errors": 0}
+      ],
+      "median_tps": 888.17,
+      "median_p99_ms": 10169.92
+    },
+    {
+      "profile": "scan",
+      "storage": "ondisk",
+      "consumers": 8,
+      "samples": [
+        {"run": 1, "tps": 1385.08, "delivered": 10000, "producers": 0, "consumers": 8, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 3437.69, "p95_ms": 5928.40, "p99_ms": 6171.13, "elapsed_s": 7.220, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 2, "tps": 1281.66, "delivered": 10000, "producers": 0, "consumers": 8, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 3712.13, "p95_ms": 6528.68, "p99_ms": 6769.39, "elapsed_s": 7.802, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 3, "tps": 1307.44, "delivered": 10000, "producers": 0, "consumers": 8, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 3547.04, "p95_ms": 6315.53, "p99_ms": 6610.73, "elapsed_s": 7.649, "producer_errors": 0, "consumer_errors": 0}
+      ],
+      "median_tps": 1307.44,
+      "median_p99_ms": 6610.73
+    },
+    {
+      "profile": "scan",
+      "storage": "ondisk",
+      "consumers": 16,
+      "samples": [
+        {"run": 1, "tps": 1560.78, "delivered": 10000, "producers": 0, "consumers": 16, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 2625.49, "p95_ms": 5124.73, "p99_ms": 5352.18, "elapsed_s": 6.407, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 2, "tps": 1628.21, "delivered": 10000, "producers": 0, "consumers": 16, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 2845.49, "p95_ms": 4837.88, "p99_ms": 5028.11, "elapsed_s": 6.142, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 3, "tps": 1655.28, "delivered": 10000, "producers": 0, "consumers": 16, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 3093.42, "p95_ms": 5119.62, "p99_ms": 5311.07, "elapsed_s": 6.041, "producer_errors": 0, "consumer_errors": 0}
+      ],
+      "median_tps": 1628.21,
+      "median_p99_ms": 5311.07
+    },
+    {
+      "profile": "scan",
+      "storage": "inmemory",
+      "consumers": 1,
+      "samples": [
+        {"run": 1, "tps": 249.30, "delivered": 10000, "producers": 0, "consumers": 1, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 20671.00, "p95_ms": 37007.42, "p99_ms": 38559.98, "elapsed_s": 40.112, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 2, "tps": 262.88, "delivered": 10000, "producers": 0, "consumers": 1, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 20799.16, "p95_ms": 35362.92, "p99_ms": 36582.54, "elapsed_s": 38.041, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 3, "tps": 299.99, "delivered": 10000, "producers": 0, "consumers": 1, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 17280.07, "p95_ms": 30651.65, "p99_ms": 31892.32, "elapsed_s": 33.335, "producer_errors": 0, "consumer_errors": 0}
+      ],
+      "median_tps": 262.88,
+      "median_p99_ms": 36582.54
+    },
+    {
+      "profile": "scan",
+      "storage": "inmemory",
+      "consumers": 2,
+      "samples": [
+        {"run": 1, "tps": 473.56, "delivered": 10000, "producers": 0, "consumers": 2, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 11006.51, "p95_ms": 19018.41, "p99_ms": 19721.48, "elapsed_s": 21.117, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 2, "tps": 539.57, "delivered": 10000, "producers": 0, "consumers": 2, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 9435.05, "p95_ms": 16610.74, "p99_ms": 17234.85, "elapsed_s": 18.533, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 3, "tps": 558.52, "delivered": 10000, "producers": 0, "consumers": 2, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 9330.93, "p95_ms": 15562.09, "p99_ms": 16257.79, "elapsed_s": 17.904, "producer_errors": 0, "consumer_errors": 0}
+      ],
+      "median_tps": 539.57,
+      "median_p99_ms": 17234.85
+    },
+    {
+      "profile": "scan",
+      "storage": "inmemory",
+      "consumers": 4,
+      "samples": [
+        {"run": 1, "tps": 766.37, "delivered": 10000, "producers": 0, "consumers": 4, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 7593.02, "p95_ms": 11410.41, "p99_ms": 11805.21, "elapsed_s": 13.048, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 2, "tps": 756.10, "delivered": 10000, "producers": 0, "consumers": 4, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 7302.52, "p95_ms": 11430.03, "p99_ms": 11897.31, "elapsed_s": 13.226, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 3, "tps": 745.40, "delivered": 10000, "producers": 0, "consumers": 4, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 7453.12, "p95_ms": 11721.96, "p99_ms": 12129.56, "elapsed_s": 13.416, "producer_errors": 0, "consumer_errors": 0}
+      ],
+      "median_tps": 756.10,
+      "median_p99_ms": 11897.31
+    },
+    {
+      "profile": "scan",
+      "storage": "inmemory",
+      "consumers": 8,
+      "samples": [
+        {"run": 1, "tps": 555.01, "delivered": 10000, "producers": 0, "consumers": 8, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 9931.50, "p95_ms": 15984.54, "p99_ms": 16711.18, "elapsed_s": 18.018, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 2, "tps": 477.96, "delivered": 10000, "producers": 0, "consumers": 8, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 10629.65, "p95_ms": 18719.85, "p99_ms": 19472.66, "elapsed_s": 20.922, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 3, "tps": 514.66, "delivered": 10000, "producers": 0, "consumers": 8, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 10310.51, "p95_ms": 17662.28, "p99_ms": 18174.21, "elapsed_s": 19.430, "producer_errors": 0, "consumer_errors": 0}
+      ],
+      "median_tps": 514.66,
+      "median_p99_ms": 18174.21
+    },
+    {
+      "profile": "scan",
+      "storage": "inmemory",
+      "consumers": 16,
+      "samples": [
+        {"run": 1, "tps": 462.97, "delivered": 10000, "producers": 0, "consumers": 16, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 13591.59, "p95_ms": 20045.32, "p99_ms": 20359.37, "elapsed_s": 21.600, "producer_errors": 0, "consumer_errors": 0},
+        {"run": 2, "tps": 457.33, "delivered": 10000, "producers": 0, "consumers": 16, "preload": 10000, "msg_size_bytes": 64, "p50_ms": 12667.29, "p95_ms": 20205.12, "p99_ms": 20616.62, "elapsed_s": 21.866, "producer_errors": 0, "consumer_errors": 0}
+      ],
+      "median_tps": 462.97,
+      "median_p99_ms": 20616.62
+    }
+  ]
+}
