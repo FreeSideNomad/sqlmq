@@ -77,7 +77,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends curl gnupg apt-transport-https
           # See: https://learn.microsoft.com/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server
-          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+          # --no-tty + --batch + --yes avoids "gpg: cannot open '/dev/tty'" on Actions runners
+          # (target keyring already exists from prior runs in cache; --yes overwrites without prompting).
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor --no-tty --batch --yes -o /usr/share/keyrings/microsoft-prod.gpg
           UBUNTU_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
           echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/$(. /etc/os-release && echo $VERSION_ID)/prod $UBUNTU_CODENAME main" | sudo tee /etc/apt/sources.list.d/microsoft-prod.list > /dev/null
           sudo apt-get update
