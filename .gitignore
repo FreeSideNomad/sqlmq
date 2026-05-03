@@ -34,3 +34,16 @@ target/bench-results/
 
 # Logs
 *.log
+
+# Python (clients/python)
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.venv/
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+.python-version

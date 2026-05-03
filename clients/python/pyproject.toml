@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sqlmq"
+version = "0.1.0"
+description = "Strict pgmq-API-compatible Python client for sqlmq (SQL Server). Drop-in replacement for tembo-pgmq-python 0.10.0."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [
+    { name = "sqlmq contributors" },
+]
+keywords = ["sqlmq", "pgmq", "queue", "sqlserver", "mssql", "message-queue"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+]
+dependencies = [
+    "pyodbc>=5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "testcontainers[mssql]>=4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/freesidenomad/sqlmq"
+Source = "https://github.com/freesidenomad/sqlmq"
+Issues = "https://github.com/freesidenomad/sqlmq/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sqlmq"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers"
+markers = [
+    "integration: requires a running SQL Server (provided via testcontainers)",
+]
