@@ -48,6 +48,7 @@
         <flyway.version>10.20.1</flyway.version>
         <testcontainers.version>1.20.4</testcontainers.version>
         <junit.version>5.11.3</junit.version>
+        <jqwik.version>1.9.3</jqwik.version>
         <hikari.version>6.0.0</hikari.version>
         <assertj.version>3.26.3</assertj.version>
         <slf4j.version>2.0.16</slf4j.version>
@@ -74,6 +75,19 @@
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!--
+            jqwik runs property-based tests via its own JUnit Platform engine.
+            Surefire picks it up automatically (engine on the classpath); no
+            extra plugin config required. The PropertyIT class uses jqwik's
+            @BeforeContainer / @AfterContainer lifecycle directly because
+            jqwik does not invoke Jupiter @ExtendWith extensions.
+        -->
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <version>${jqwik.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>

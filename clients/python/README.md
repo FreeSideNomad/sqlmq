@@ -142,6 +142,40 @@ Tests spin up `mcr.microsoft.com/mssql/server:2022-latest` once per pytest
 invocation (via `testcontainers`), then create a fresh database and apply all
 sqlmq migrations per test function.
 
+## Property-based tests
+
+`tests/test_properties.py` exercises the strict pgmq contract with
+[hypothesis](https://hypothesis.readthedocs.io/) — 30 randomised examples per
+property × 10 properties = 300 round-trip examples per run, each against a
+freshly-created queue that is dropped on exit. Identical property names and
+semantics live in the Java client's `PropertyIT.java` so the two libraries
+share an invariant set.
+
+Properties exercised:
+
+| Id  | Property |
+|-----|----------|
+| P1  | send/read round-trip preserves the message |
+| P2  | `send` returns monotonic, unique `msg_id`s per queue (V010 applock) |
+| P3  | VT honored within a session (read-then-read returns `None`) |
+| P4  | delete-then-read returns `None` |
+| P5  | archive moves rather than copies (`queue_length` drops to 0) |
+| P6  | purge clears the active queue |
+| P7  | `send_batch` returns N ids in caller order |
+| P8  | `delete_batch` with unknown ids returns `[]` |
+| P9  | headers round-trip when sent (sqlmq-extension `headers=` kwarg) |
+| P10 | sanity: `read` on an empty queue returns `None` / `[]` |
+
+Run them in isolation:
+
+```bash
+cd clients/python
+uv venv && uv pip install -e '.[dev]'
+uv run pytest tests/test_properties.py -v
+```
+
+Wall-time is ~60 s on a warm Docker daemon.
+
 ## License
 
 Apache 2.0 (matches the parent repository).

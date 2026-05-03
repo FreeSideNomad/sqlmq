@@ -47,3 +47,7 @@ dist/
 .mypy_cache/
 .ruff_cache/
 .python-version
+uv.lock
+
+# jqwik failure-replay database (local-only; per-machine seed cache)
+.jqwik-database

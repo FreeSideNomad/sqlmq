@@ -146,6 +146,49 @@ extension that:
 3. Applies all sqlmq Flyway migrations from `../../sql/migrations/`.
 4. Drops the database in `afterAll`.
 
+## Property-based tests
+
+`PropertyIT.java` exercises the strict pgmq contract with
+[jqwik](https://jqwik.net/) — 30 randomised tries per property × 10 properties
+= 300 round-trip examples per run, each against a freshly-created queue that
+is dropped on exit. Identical property names and semantics live in the Python
+client's `tests/test_properties.py` so the two libraries share an invariant
+set.
+
+Properties exercised:
+
+| Id  | Property |
+|-----|----------|
+| P1  | send/read round-trip preserves the message |
+| P2  | `send` returns monotonic, unique `msgId`s per queue (V010 applock) |
+| P3  | VT honored within a session (read-then-read returns empty) |
+| P4  | delete-then-read returns empty |
+| P5  | archive moves rather than copies (`queueLength` drops to 0) |
+| P6  | purge clears the active queue |
+| P7  | `sendBatch` returns N ids in caller order |
+| P8  | `deleteBatch` with unknown ids returns the empty list |
+| P9  | headers round-trip when sent (sqlmq-extension `headers` arg) |
+| P10 | sanity: `read` on an empty queue returns empty / `[]` |
+
+Run them in isolation:
+
+```bash
+cd clients/java
+JAVA_HOME=/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home \
+  PATH=$JAVA_HOME/bin:$PATH \
+  mvn -B verify -Dtest=PropertyIT
+```
+
+Wall-time is ~16 s on a warm Docker daemon (the SQL Server container is
+JVM-shared with the other `*IT` classes when run under `mvn verify`).
+
+`PropertyIT` uses jqwik's own lifecycle (`@BeforeContainer` / `@AfterContainer`)
+rather than the Jupiter `TestContainerFixture` extension, because jqwik runs
+`@Property` methods through its own JUnit Platform engine and does not invoke
+Jupiter `@ExtendWith` extensions. The shared `TestContainerFixture.container()`
+singleton is reused, so the SQL Server testcontainer still starts only once
+per JVM.
+
 ## License
 
 Apache 2.0 (matches the parent repository).
