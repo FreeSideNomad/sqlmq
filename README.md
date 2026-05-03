@@ -2,30 +2,32 @@
 
 A pure T-SQL message queue for SQL Server 2022 and later. Port of [pgmq](https://github.com/tembo-io/pgmq) (PostgreSQL Message Queue) to SQL Server.
 
-> **Status:** Design phase. No code yet. See the [design spec](docs/superpowers/specs/2026-05-02-sqlmq-port-from-pgmq-design.md).
+> **Status:** v1 implementation complete. See the [design spec](docs/superpowers/specs/2026-05-02-sqlmq-port-from-pgmq-design.md).
 
 ## What it is
 
 - **A queue, installed by applying SQL migrations.** No services, no agents, no host-language runtime required.
 - **Portable.** SQL Server 2022+, Windows or Linux. No CLR, no Service Broker, no FILESTREAM, no MSDTC.
 - **FIFO by default.** Plus pgmq-style grouped-FIFO ("one in-flight per group") for partition-key ordering.
-- **Two storage variants** behind a single API: classic on-disk tables, and memory-optimized (Hekaton) tables with natively compiled stored procedures. v1 ships both for a head-to-head bake-off.
+- **Classic on-disk tables** with `READPAST + UPDLOCK + ROWLOCK + READCOMMITTEDLOCK` for parallel competing-consumer reads.
 
 ## What it isn't (in v1)
 
 - Not a server-side long-poll — long-polling is a client-side concern. The [research](research/sqlserver-longpoll.md) explains why; every shipping SQL Server queue library does the same.
 - Not Service Broker. Not Query Notifications.
 - No partitioned queues, no topics, no LISTEN/NOTIFY, no down migrations.
+- **No in-memory (Hekaton) storage variant.** Investigated in V011-V013 and retired in V014 — see [bake-off results](bench-results/scan-vm-native/) for the head-to-head data. Memory-optimized tables under SNAPSHOT have no `READPAST` equivalent, so concurrent consumers thunderclap on `SELECT TOP(1) ORDER BY msg_id`, collide on `UPDATE`, and trigger 41302 retry storms. The on-disk pattern is strictly better for this workload.
 
 ## Calling shape
 
 ```sql
 EXEC sqlmq.create_queue
     @name = 'orders',
-    @storage = 'inmemory',          -- 'ondisk' | 'inmemory'
     @grouped = 1,                   -- enable grouped-FIFO reads
     @payload_type = 'json',         -- 'json' | 'binary'
     @max_delivery_count = 5;        -- DLQ after 5 failed deliveries
+
+-- @storage defaults to 'ondisk' (the only supported value as of V014).
 
 EXEC sqlmq.send
     @queue = 'orders',
@@ -73,11 +75,13 @@ java -Xmx4g -jar harness/target/sqlmq-bench-cli.jar \
 # Custom workload
 java -Xmx4g -jar harness/target/sqlmq-bench-cli.jar --container \
   --producers 16 --consumers 16 --messages-per-producer 5000 \
-  --storage both --runs 5
+  --runs 5
 
 # Help
 java -jar harness/target/sqlmq-bench-cli.jar --help
 ```
+
+(`--storage` defaults to `ondisk`, the only supported variant since V014.)
 
 Results land in `./bench-results/<timestamp>/` as `bench-summary.md`,
 `bench-results.json`, and `bench-results.csv`.
@@ -96,7 +100,6 @@ java -Xmx4g -jar harness/target/sqlmq-bench-cli.jar \
   --scan-consumers 1,2,4,8,16,32 \
   --preload 50000 \
   --message-size 256 \
-  --storage both \
   --runs 3
 ```
 
@@ -139,8 +142,7 @@ java -Xmx4g -jar harness/target/sqlmq-bench-cli.jar \
   --jdbc-user sa --jdbc-password 'YourStrong!Passw0rd' \
   --scan-consumers 1,2,4,8,16,32 \
   --preload 50000 \
-  --runs 3 \
-  --storage both
+  --runs 3
 ```
 
 ## Running migrations

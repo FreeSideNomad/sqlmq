@@ -153,7 +153,8 @@ public final class SqlmqBenchCli implements Callable<Integer> {
     int messageSize;
 
     @Option(names = "--storage", paramLabel = "VARIANT",
-            description = "Storage variant(s) to test (repeatable). Choices: ondisk, inmemory, both. Default: both.")
+            description = "Storage variant(s) to test (repeatable). Only 'ondisk' is supported as of V014 " +
+                          "(in-memory variant retired). Default: ondisk.")
     List<String> storage;
 
     @Option(names = "--batch-size", defaultValue = "10",
@@ -438,17 +439,24 @@ public final class SqlmqBenchCli implements Callable<Integer> {
     }
 
     private List<String> resolveStorage() {
+        // V014: in-memory storage retired (see V014 header). Only 'ondisk' is
+        // accepted now. We continue to accept 'inmemory' / 'both' as inputs but
+        // silently coerce them to 'ondisk' so existing operator scripts don't
+        // break on upgrade — and emit a stderr warning.
         if (storage == null || storage.isEmpty()) {
-            return List.of("ondisk", "inmemory");
+            return List.of("ondisk");
         }
         var out = new LinkedHashSet<String>();
         for (var s : storage) {
             switch (s.toLowerCase(Locale.ROOT)) {
-                case "ondisk"   -> out.add("ondisk");
-                case "inmemory" -> out.add("inmemory");
-                case "both"     -> { out.add("ondisk"); out.add("inmemory"); }
+                case "ondisk" -> out.add("ondisk");
+                case "inmemory", "both" -> {
+                    System.err.println("Warning: --storage '" + s + "' is no longer supported (V014 retired " +
+                                       "the in-memory variant); coercing to 'ondisk'.");
+                    out.add("ondisk");
+                }
                 default -> throw new CommandLine.ParameterException(new CommandLine(this),
-                    "Unknown --storage value '" + s + "'. Choices: ondisk, inmemory, both.");
+                    "Unknown --storage value '" + s + "'. Only 'ondisk' is supported as of V014.");
             }
         }
         return new ArrayList<>(out);

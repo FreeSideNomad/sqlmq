@@ -21,13 +21,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class NoLossNoDoubleDeliveryTest {
 
     static Stream<Arguments> profilesAndStorage() {
-        // Cross-product of profiles x storage variants. heavy/asymmetric stay
-        // out of CI by default — opt in locally.
+        // V014: in-memory storage retired — only on-disk runs now.
+        // heavy/asymmetric stay out of CI by default — opt in locally.
         return Stream.of(
             Arguments.of(Profile.light(),  "ondisk"),
-            Arguments.of(Profile.medium(), "ondisk"),
-            Arguments.of(Profile.light(),  "inmemory"),
-            Arguments.of(Profile.medium(), "inmemory")
+            Arguments.of(Profile.medium(), "ondisk")
         );
     }
 

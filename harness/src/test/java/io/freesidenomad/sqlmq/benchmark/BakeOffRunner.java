@@ -48,7 +48,8 @@ class BakeOffRunner {
         System.out.println("Bake-off output dir: " + dir.toAbsolutePath());
 
         for (var named : BenchmarkProfiles.all()) {
-            for (var storage : List.of("ondisk", "inmemory")) {
+            // V014: in-memory storage retired — only on-disk runs now.
+            for (var storage : List.of("ondisk")) {
                 System.out.printf("%n=== %s [%s] ===%n", named.name(), storage);
                 var samples = new ArrayList<RunResult>();
                 for (int i = 0; i < 5; i++) {
@@ -144,25 +145,7 @@ class BakeOffRunner {
                    .append(String.format("%.2f", r.p99Ms())).append(" |\n");
         }
 
-        // Side-by-side comparison: ondisk vs inmemory ratios
-        summary.append("\n## ondisk vs inmemory ratios\n\n");
-        summary.append("| Profile | ondisk TPS | inmemory TPS | ratio (im/od) | ondisk p99 | inmemory p99 |\n");
-        summary.append("|---------|-----------:|-------------:|--------------:|-----------:|-------------:|\n");
-        var byProfile = new java.util.LinkedHashMap<String, java.util.Map<String, RunResult>>();
-        for (var r : results) byProfile.computeIfAbsent(r.profile(), k -> new java.util.HashMap<>()).put(r.storage(), r);
-        for (var entry : byProfile.entrySet()) {
-            var od = entry.getValue().get("ondisk");
-            var im = entry.getValue().get("inmemory");
-            if (od == null || im == null) continue;
-            double ratio = im.tps() / Math.max(od.tps(), 0.001);
-            summary.append("| ").append(entry.getKey()).append(" | ")
-                   .append(String.format("%.0f", od.tps())).append(" | ")
-                   .append(String.format("%.0f", im.tps())).append(" | ")
-                   .append(String.format("%.2fx", ratio)).append(" | ")
-                   .append(String.format("%.2fms", od.p99Ms())).append(" | ")
-                   .append(String.format("%.2fms", im.p99Ms())).append(" |\n");
-        }
-
+        // V014: in-memory storage retired — no side-by-side ratios needed.
         var summaryPath = dir.resolve("bench-summary.md");
         Files.writeString(summaryPath, summary.toString());
         System.out.println("\n" + summary);
