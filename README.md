@@ -2,7 +2,7 @@
 
 A pure T-SQL message queue for SQL Server 2022 and later. Port of [pgmq](https://github.com/tembo-io/pgmq) (PostgreSQL Message Queue) to SQL Server.
 
-> **Status:** v1 implementation complete. See the [design spec](docs/superpowers/specs/2026-05-02-sqlmq-port-from-pgmq-design.md).
+> **Status:** v1 implementation complete. See the [design spec](docs/superpowers/archive/2026-05-02-sqlmq-port-from-pgmq-design.md).
 
 ## What it is
 
@@ -16,7 +16,6 @@ A pure T-SQL message queue for SQL Server 2022 and later. Port of [pgmq](https:/
 - Not a server-side long-poll — long-polling is a client-side concern. The [research](research/sqlserver-longpoll.md) explains why; every shipping SQL Server queue library does the same.
 - Not Service Broker. Not Query Notifications.
 - No partitioned queues, no topics, no LISTEN/NOTIFY, no down migrations.
-- **No in-memory (Hekaton) storage variant.** Investigated in V011-V013 and retired in V014 — see [bake-off results](bench-results/scan-vm-native/) for the head-to-head data. Memory-optimized tables under SNAPSHOT have no `READPAST` equivalent, so concurrent consumers thunderclap on `SELECT TOP(1) ORDER BY msg_id`, collide on `UPDATE`, and trigger 41302 retry storms. The on-disk pattern is strictly better for this workload.
 
 ## Calling shape
 
@@ -26,8 +25,6 @@ EXEC sqlmq.create_queue
     @grouped = 1,                   -- enable grouped-FIFO reads
     @payload_type = 'json',         -- 'json' | 'binary'
     @max_delivery_count = 5;        -- DLQ after 5 failed deliveries
-
--- @storage defaults to 'ondisk' (the only supported value as of V014).
 
 EXEC sqlmq.send
     @queue = 'orders',
@@ -80,8 +77,6 @@ java -Xmx4g -jar harness/target/sqlmq-bench-cli.jar --container \
 # Help
 java -jar harness/target/sqlmq-bench-cli.jar --help
 ```
-
-(`--storage` defaults to `ondisk`, the only supported variant since V014.)
 
 Results land in `./bench-results/<timestamp>/` as `bench-summary.md`,
 `bench-results.json`, and `bench-results.csv`.

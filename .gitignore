@@ -26,6 +26,9 @@ replay_pid*
 .DS_Store
 Thumbs.db
 
+# Claude Code session state (per-clone, not shared)
+.claude/
+
 # Local benchmark output
 target/bench-results/
 
