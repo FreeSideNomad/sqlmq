@@ -5,6 +5,22 @@
 **Repository (planned):** github.com/FreeSideNomad/sqlmq
 **License (planned):** Apache 2.0
 
+## Retired in v1
+
+The **in-memory (Hekaton) storage variant** described as a co-equal alternative
+to the on-disk variant in this spec was implemented (V011 filegroup setup,
+V012 applock-serialized read, V013 per-queue natively compiled read) and then
+**retired in V014**. A head-to-head bake-off across two environments (Mac
+Rosetta + native x86_64 Hyper-V VM) and both implementations showed in-memory
+never beat on-disk and degraded sharply at higher consumer counts: memory-
+optimized tables under SNAPSHOT have no `READPAST` equivalent, so concurrent
+consumers thunderclap on `SELECT TOP(1) ORDER BY msg_id`, collide on
+`UPDATE`, and trigger 41302 (write-write conflict) retry storms. The on-disk
+path's `READPAST + UPDLOCK + ROWLOCK + READCOMMITTEDLOCK` pattern is strictly
+better for this workload. See `bench-results/scan-vm-native/` for the data
+and the V014 migration header for the full rationale. References to the
+in-memory variant elsewhere in this spec remain for historical context.
+
 ## Problem
 
 [pgmq](https://github.com/tembo-io/pgmq) is a small, well-loved PostgreSQL message queue implemented as stored functions. There is no equivalent for SQL Server. Teams running on SQL Server who want pgmq's "drop-in queue, no extra services, no extra processes" model have to either roll their own table-as-queue (and re-discover every concurrency footgun) or adopt Service Broker (heavy, ignored by Microsoft since SQL 2008-R2, not supported on Azure SQL DB).

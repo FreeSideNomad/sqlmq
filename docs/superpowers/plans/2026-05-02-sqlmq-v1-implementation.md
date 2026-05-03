@@ -3694,3 +3694,13 @@ This step is the difference between "Windows portability" being a real claim or 
 - `sqlmq.send` proc replaced via `CREATE OR ALTER` in V008, adding `@group_key NVARCHAR(255) = NULL` with default — non-breaking for existing callers.
 
 No issues found that block plan execution.
+
+---
+
+## Phase 8 retrospective — per-queue natively compiled in-memory read
+
+V013 replaced V012's applock-serialized in-memory read with a per-queue natively compiled inner proc, hoping that removing the serialization would let multiple consumers drain a memory-optimized queue truly in parallel and finally beat the on-disk variant under fan-out. The per-queue proc compiled cleanly after working around natively-compiled restrictions (no subqueries in UPDATE/DELETE, no inline table variables, no FROM clause in UPDATE) by adopting a WHILE-loop of `SELECT TOP (1) @id = msg_id ORDER BY msg_id` followed by `UPDATE WHERE msg_id = @id OUTPUT inserted.*`. The dispatcher merges per-iteration result sets via `INSERT @captured EXEC` and retries on 41302/41325 with a 50-attempt budget. Functionally correct under load, but the bake-off (`bench-results/scan-vm-native-v2-native-read/`) showed in-memory still degraded sharply past 4 consumers — without `READPAST`, the per-row optimistic UPDATE collisions dominate at fan-out. Phase 8 closed with a confident "in-memory is not the right tool for this workload" conclusion that fed directly into Phase 9.
+
+## Phase 9 retrospective — retire in-memory storage variant
+
+V014 retires the in-memory variant entirely. It iterates every existing in-memory queue from `sqlmq.meta` and tears down the per-queue native procs, the memory-optimized queue table, the on-disk archive table, and the meta row. It then rewrites `sqlmq.create_queue` to throw a clear `'In-memory storage is not supported. Use @storage = ''ondisk'' (the default).'` message when called with `@storage='inmemory'`, and rewrites every public dispatcher (`send`, `send_batch`, `[read]`, `read_grouped`, `[delete]`, `pop`, `dlq_sweep`, `drop_queue`) to drop the in-memory branch — they only handle on-disk now. The `CHECK` constraint on `sqlmq.meta.storage_type` is left allowing both values to keep migration history coherent (procs reject inmemory at create time, which is sufficient defense). The interpreted helpers from V012 and the natively compiled generators from V013 are left in place as unreachable legacy. Tests: `StorageVariants.all()` now returns only `Arguments.of("ondisk")` so the parameterized test surface stays in place for any future storage variant; `inmemoryStorageRejected` replaces the two `createsAndListsInMemoryJsonQueue` / `dropOfInMemoryQueueDropsTableAndProcs` tests.
