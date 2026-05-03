@@ -1,0 +1,4 @@
+profile,storage,consumers,producers,run,tps,p50_ms,p95_ms,p99_ms,delivered,elapsed_s,preload,msg_size_bytes,producer_errors,consumer_errors
+scan,ondisk,1,0,1,1184.39,384.14,645.52,669.95,2000,1.689,2000,64,0,0
+scan,ondisk,4,0,1,1442.81,212.31,352.79,367.54,2000,1.386,2000,64,0,0
+scan,ondisk,16,0,1,1566.66,151.76,256.18,263.93,2000,1.277,2000,64,0,0

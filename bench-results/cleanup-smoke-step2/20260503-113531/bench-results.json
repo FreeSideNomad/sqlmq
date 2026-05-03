@@ -1,0 +1,37 @@
+{
+  "started_at": "2026-05-03T15:35:31.421359Z",
+  "completed_at": "2026-05-03T15:35:35.961955Z",
+  "container": "mcr.microsoft.com/mssql/server:2022-latest",
+  "results": [
+    {
+      "profile": "scan",
+      "storage": "ondisk",
+      "consumers": 1,
+      "samples": [
+        {"run": 1, "tps": 1154.20, "delivered": 2000, "producers": 0, "consumers": 1, "preload": 2000, "msg_size_bytes": 64, "p50_ms": 406.12, "p95_ms": 682.64, "p99_ms": 708.89, "elapsed_s": 1.733, "producer_errors": 0, "consumer_errors": 0}
+      ],
+      "median_tps": 1154.20,
+      "median_p99_ms": 708.89
+    },
+    {
+      "profile": "scan",
+      "storage": "ondisk",
+      "consumers": 4,
+      "samples": [
+        {"run": 1, "tps": 1474.86, "delivered": 2000, "producers": 0, "consumers": 4, "preload": 2000, "msg_size_bytes": 64, "p50_ms": 213.68, "p95_ms": 326.19, "p99_ms": 336.90, "elapsed_s": 1.356, "producer_errors": 0, "consumer_errors": 0}
+      ],
+      "median_tps": 1474.86,
+      "median_p99_ms": 336.90
+    },
+    {
+      "profile": "scan",
+      "storage": "ondisk",
+      "consumers": 16,
+      "samples": [
+        {"run": 1, "tps": 1584.74, "delivered": 2000, "producers": 0, "consumers": 16, "preload": 2000, "msg_size_bytes": 64, "p50_ms": 163.28, "p95_ms": 255.30, "p99_ms": 265.32, "elapsed_s": 1.262, "producer_errors": 0, "consumer_errors": 0}
+      ],
+      "median_tps": 1584.74,
+      "median_p99_ms": 265.32
+    }
+  ]
+}
