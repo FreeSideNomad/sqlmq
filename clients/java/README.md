@@ -87,11 +87,11 @@ var q = new AsyncPgmqClient(dataSource, jdbcExec);
 | `createQueue(queue)` | OK | Maps to `EXEC sqlmq.create_queue` with `@storage='ondisk'`, `@grouped=0`, `@payload_type='json'`. |
 | `createQueue(queue, true /* unlogged */)` | **`UnsupportedOperationException`** | sqlmq retired its in-memory variant in V014. |
 | `createPartitionedQueue(...)` | **`UnsupportedOperationException`** | Depends on `pg_partman`; no SQL Server equivalent. Tracked for a future release. |
-| `dropQueue(queue)` | OK | Returns `true` if dropped, `false` if missing. The `partitioned` arg is accepted but ignored. |
+| `dropQueue(queue)` | OK | Returns `true` if dropped, `false` if missing. `dropQueue(queue, true)` throws `UnsupportedOperationException` (sqlmq has no partitioned queues; mirrors the rejection in `createPartitionedQueue`). |
 | `listQueues()` | OK | |
 | `validateQueueName(name)` | OK (client-side) | Mirrors V003 hardening: `^[A-Za-z_][A-Za-z0-9_]{0,59}$`. Throws `IllegalArgumentException` on mismatch. |
-| `send(queue, message)` / `send(queue, message, delaySeconds)` | OK | `Map<String, Object>` payloads serialized via Jackson. |
-| `sendBatch(queue, messages)` / `sendBatch(queue, messages, delaySeconds)` | OK | Single round trip via mssql-jdbc's native `setStructured` + `dbo.sqlmq_send_tvp`. |
+| `send(queue, message[, delaySeconds[, headers]])` | OK | `Map<String, Object>` payloads serialized via Jackson. The 4-arg overload's `headers` is a sqlmq extension to the strict pgmq 0.10 surface — JSON-encoded and stored on the row; visible to consumers via `Message#headers()`. |
+| `sendBatch(queue, messages[, delaySeconds[, headers]])` | OK | Single round trip via mssql-jdbc's native `setStructured` + `dbo.sqlmq_send_tvp`. The 4-arg overload's `headers` (sqlmq extension) is applied uniformly to every message in the batch. |
 | `read(queue)` / `read(queue, vtSeconds)` | OK | `vtSeconds` defaults to 30 (matches pgmq). Returns `Optional<Message>`. |
 | `readBatch(queue, vtSeconds, batchSize)` | OK | Returns `List<Message>` (empty list when queue is empty). |
 | `readWithPoll(queue, vtSeconds, qty, maxPollSeconds, pollIntervalMs)` | OK (client-side polling) | sqlmq has no server-side long-poll (deliberate; see `research/sqlserver-longpoll.md`). Hangfire-style backoff: loop calling `readBatch` until first hit or deadline. |
@@ -101,20 +101,27 @@ var q = new AsyncPgmqClient(dataSource, jdbcExec);
 | `archive(queue, msgId)` | OK | |
 | `archiveBatch(queue, msgIds)` | OK (with extra round trip) | Same shape note as `deleteBatch`. |
 | `purge(queue)` | OK | Returns the count purged. |
-| `metrics(queue)` | OK (with caveats) | `newestMsgAgeSec` is always `null` (sqlmq does not surface it). `scrapeTime` is filled client-side from `Instant.now()`. |
-| `metricsAll()` | OK (with caveats) | Same caveats as `metrics`. |
+| `metrics(queue)` | OK | `scrapeTime` is filled client-side from `Instant.now()`. Both `oldestMsgAgeSec` and `newestMsgAgeSec` are surfaced from the proc (since V016). |
+| `metricsAll()` | OK | Same shape as `metrics`. |
 | `setVt(queue, msgId, vtSeconds)` | **`UnsupportedOperationException`** | Tracked for a future release; would require a `sqlmq.set_vt` stored proc. |
 | `detachArchive(queue)` | **`UnsupportedOperationException`** | pgmq-specific feature for partitioned archive tables; sqlmq archives are single-table per queue. |
 
-## sqlmq-extension features (not exposed via this client)
+## sqlmq-extension features (small departures from strict pgmq 0.10)
 
-This client is **strict pgmq-compat**: it deliberately does NOT expose
-sqlmq's superset features:
+This client is **mostly strict pgmq-compat**, with one small superset:
+
+* `send(queue, message, delaySeconds, headers)` and
+  `sendBatch(queue, messages, delaySeconds, headers)` accept an optional
+  headers map. sqlmq stores it on the row's `headers NVARCHAR(MAX)` column;
+  consumers read it back via `Message#headers()`. pgmq 0.10's `send` does
+  not carry headers, so consumers writing strict-pgmq-portable code can
+  use the 2-/3-arg overloads.
+
+The following sqlmq features are deliberately **not** exposed:
 
 * grouped queues (`@grouped=1`) and `read_grouped`
 * binary payloads (`@payload_type='binary'`)
 * per-queue DLQ caps (`@max_delivery_count`) and `dlq_sweep`
-* per-message headers
 
 If you need any of those, drop down to the harness's
 `io.freesidenomad.sqlmq.client.SqlmqClient` (test infrastructure, not

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -17,6 +17,13 @@ class Message:
 
     Mirrors ``tembo_pgmq_python.messages.Message`` exactly. ``message`` is the
     decoded JSON payload as a Python dict, not the raw stored string.
+
+    ``headers`` is a sqlmq-specific addition: pgmq does not carry per-message
+    headers, but sqlmq's storage layer does (NVARCHAR(MAX) JSON column on
+    every queue table). The Python client used to silently drop the column
+    even when populated; this field surfaces it. ``None`` when the underlying
+    row has no headers (the common case for messages sent through the strict
+    pgmq surface).
     """
 
     msg_id: int
@@ -24,6 +31,7 @@ class Message:
     enqueued_at: datetime
     vt: datetime
     message: dict
+    headers: Optional[dict[str, Any]] = None
 
 
 @dataclass
@@ -34,9 +42,6 @@ class QueueMetrics:
 
     Notes on sqlmq-specific behavior:
 
-    * ``newest_msg_age_sec`` is always ``None`` because sqlmq's ``metrics``
-      proc does not currently surface it (pgmq derives it cheaply from the
-      same query; sqlmq's would require a second scan and was deferred).
     * ``scrape_time`` is filled in client-side at the moment ``metrics``
       returns (UTC), since sqlmq does not return it from the proc.
     """

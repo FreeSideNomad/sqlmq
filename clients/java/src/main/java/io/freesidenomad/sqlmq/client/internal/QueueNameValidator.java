@@ -3,7 +3,7 @@ package io.freesidenomad.sqlmq.client.internal;
 import java.util.regex.Pattern;
 
 /**
- * Client-side queue name validation, mirroring V003__create_queue_hardening.sql.
+ * Client-side queue name validation, mirroring sqlmq.create_queue.
  *
  * <p>Names must start with a letter or underscore, contain only
  * {@code [A-Za-z0-9_]}, and be at most 60 characters (to leave room for

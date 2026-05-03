@@ -25,6 +25,8 @@ class MetricsTest {
         assertThat(m.queueLength()).isZero();
         assertThat(m.totalMessages()).isZero();
         assertThat(m.oldestMsgAgeSeconds()).isNull();
+        // V016: empty queue → MAX(enqueued_at) is NULL → newest is also null.
+        assertThat(m.newestMsgAgeSeconds()).isNull();
         assertThat(m.dlqCount()).isZero();
     }
 
@@ -41,6 +43,11 @@ class MetricsTest {
         var m = client.metrics(q);
         assertThat(m.queueLength()).isEqualTo(3);
         assertThat(m.totalMessages()).isGreaterThanOrEqualTo(3);
+        // V016: newest_msg_age_seconds is now surfaced. Tests run faster than
+        // a minute, so it should be a small non-negative integer.
+        assertThat(m.newestMsgAgeSeconds()).isNotNull();
+        assertThat(m.newestMsgAgeSeconds()).isGreaterThanOrEqualTo(0);
+        assertThat(m.newestMsgAgeSeconds()).isLessThan(60);
     }
 
     @Test

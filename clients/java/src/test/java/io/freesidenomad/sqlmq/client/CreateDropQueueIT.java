@@ -43,12 +43,10 @@ class CreateDropQueueIT {
         assertThat(q.dropQueue(name)).isFalse();
     }
 
-    @Test
-    void dropPartitionedKwargIsIgnored() {
-        var name = TestQueues.uniqueName("q");
-        q.createQueue(name);
-        assertThat(q.dropQueue(name, /*partitioned=*/ true)).isTrue();
-    }
+    // Note: the formerly-passing dropPartitionedKwargIsIgnored test has moved to
+    // UnsupportedFeaturesIT.dropQueuePartitionedTrueRejected — sqlmq now rejects
+    // dropQueue(name, true) with UnsupportedOperationException to avoid masking
+    // caller intent.
 
     @Test
     void validateQueueNameAcceptsLegal() {

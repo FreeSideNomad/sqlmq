@@ -140,7 +140,7 @@ public final class PgmqClient implements AutoCloseable {
     // ----------------------------------------------------------- pgmq surface
 
     /**
-     * Validate a queue name. Mirrors V003__create_queue_hardening.sql.
+     * Validate a queue name. Mirrors sqlmq.create_queue.
      *
      * @throws IllegalArgumentException if the name is null/empty or fails
      *         the regex {@code ^[A-Za-z_][A-Za-z0-9_]{0,59}$}.
@@ -215,10 +215,20 @@ public final class PgmqClient implements AutoCloseable {
     }
 
     /**
-     * Drop a queue. The {@code partitioned} flag is accepted for
-     * signature compatibility but ignored — sqlmq has no partitioned queues.
+     * Drop a queue. The {@code partitioned} flag must be {@code false};
+     * passing {@code true} throws {@link UnsupportedOperationException} to
+     * avoid masking caller intent — sqlmq has no partitioned queues.
+     *
+     * @throws UnsupportedOperationException if {@code partitioned} is {@code true}.
      */
     public boolean dropQueue(String queue, boolean partitioned) {
+        if (partitioned) {
+            throw new UnsupportedOperationException(
+                "sqlmq does not support partitioned queues; partitioned=true is "
+                    + "rejected to avoid masking caller intent. See createPartitionedQueue "
+                    + "for the same rationale."
+            );
+        }
         QueueNameValidator.validate(queue);
         try (Connection c = connectionSource.get();
              CallableStatement cs = c.prepareCall(SqlStatements.DROP_QUEUE)) {
@@ -256,7 +266,7 @@ public final class PgmqClient implements AutoCloseable {
      * Send a single message with no delay. Returns the new {@code msg_id}.
      */
     public long send(String queue, Map<String, Object> message) {
-        return send(queue, message, 0);
+        return send(queue, message, 0, null);
     }
 
     /**
@@ -264,14 +274,32 @@ public final class PgmqClient implements AutoCloseable {
      * new {@code msg_id}.
      */
     public long send(String queue, Map<String, Object> message, int delaySeconds) {
+        return send(queue, message, delaySeconds, null);
+    }
+
+    /**
+     * Send a single message with an integer delay (seconds) and an optional
+     * {@code headers} map. Returns the new {@code msg_id}.
+     *
+     * <p><strong>sqlmq extension:</strong> the {@code headers} parameter is
+     * not part of the strict pgmq 0.10 surface (pgmq's {@code send} carries
+     * payload only). sqlmq's storage already has a {@code headers NVARCHAR(MAX)}
+     * column; this overload makes that column reachable through the strict
+     * compat client so {@link Message#headers()} is not vestigial for in-app
+     * workflows. Pass {@code null} for no headers.</p>
+     */
+    public long send(String queue, Map<String, Object> message, int delaySeconds,
+                     Map<String, Object> headers) {
         QueueNameValidator.validate(queue);
         String encoded = encode(message);
+        String encodedHeaders = headers == null ? null : encode(headers);
         try (Connection c = connectionSource.get();
              CallableStatement cs = c.prepareCall(SqlStatements.SEND)) {
             cs.setString(1, queue);
             cs.setString(2, encoded);
             cs.setNull(3, Types.VARBINARY);
-            cs.setNull(4, Types.NVARCHAR);
+            if (encodedHeaders == null) cs.setNull(4, Types.NVARCHAR);
+            else cs.setString(4, encodedHeaders);
             cs.setInt(5, delaySeconds);
             try (ResultSet rs = cs.executeQuery()) {
                 if (!rs.next()) {
@@ -289,7 +317,7 @@ public final class PgmqClient implements AutoCloseable {
      * caller order.
      */
     public List<Long> sendBatch(String queue, List<Map<String, Object>> messages) {
-        return sendBatch(queue, messages, 0);
+        return sendBatch(queue, messages, 0, null);
     }
 
     /**
@@ -298,6 +326,20 @@ public final class PgmqClient implements AutoCloseable {
      * declare-and-EXEC workaround because mssql-jdbc supports TVPs natively.
      */
     public List<Long> sendBatch(String queue, List<Map<String, Object>> messages, int delaySeconds) {
+        return sendBatch(queue, messages, delaySeconds, null);
+    }
+
+    /**
+     * Send a batch of messages with an optional {@code headers} map applied
+     * uniformly to every row.
+     *
+     * <p>Same sqlmq-extension caveat as
+     * {@link #send(String, Map, int, Map)}: pgmq's {@code send_batch} does
+     * not carry headers. Use this overload when you need them; pass
+     * {@code null} to keep the strict pgmq behavior.</p>
+     */
+    public List<Long> sendBatch(String queue, List<Map<String, Object>> messages, int delaySeconds,
+                                Map<String, Object> headers) {
         QueueNameValidator.validate(queue);
         if (messages.isEmpty()) {
             return List.of();
@@ -306,13 +348,14 @@ public final class PgmqClient implements AutoCloseable {
         for (var m : messages) {
             encoded.add(encode(m));
         }
+        String encodedHeaders = headers == null ? null : encode(headers);
         var ids = new ArrayList<Long>(messages.size());
         try (Connection c = connectionSource.get();
              CallableStatement cs = c.prepareCall(SqlStatements.SEND_BATCH)) {
             cs.setString(1, queue);
             cs.unwrap(SQLServerCallableStatement.class)
                 .setStructured(2, TvpHelpers.SEND_TVP_NAME,
-                    TvpHelpers.buildSendTvp(encoded, delaySeconds));
+                    TvpHelpers.buildSendTvp(encoded, delaySeconds, encodedHeaders));
             try (ResultSet rs = cs.executeQuery()) {
                 while (rs.next()) {
                     ids.add(rs.getLong("msg_id"));
@@ -478,9 +521,9 @@ public final class PgmqClient implements AutoCloseable {
     /**
      * Return metrics for a single queue.
      *
-     * <p>{@link QueueMetrics#newestMsgAgeSec} is always {@code null} —
-     * sqlmq's proc does not surface it. {@link QueueMetrics#scrapeTime}
-     * is filled client-side at the moment {@code metrics()} returns.</p>
+     * <p>{@link QueueMetrics#scrapeTime} is filled client-side at the moment
+     * {@code metrics()} returns (UTC), since sqlmq does not emit it from the
+     * proc.</p>
      */
     public QueueMetrics metrics(String queue) {
         QueueNameValidator.validate(queue);
@@ -669,14 +712,16 @@ public final class PgmqClient implements AutoCloseable {
     }
 
     private static QueueMetrics rowToMetrics(ResultSet rs) throws SQLException {
-        // sqlmq columns: queue_name, queue_length, total_messages,
-        // oldest_msg_age_seconds, dlq_count.
+        // sqlmq columns (V016+): queue_name, queue_length, total_messages,
+        // oldest_msg_age_seconds, newest_msg_age_seconds, dlq_count.
         String name = rs.getString("queue_name");
         long len = rs.getLong("queue_length");
         long total = rs.getLong("total_messages");
         Object oldestObj = rs.getObject("oldest_msg_age_seconds");
         Integer oldest = oldestObj == null ? null : ((Number) oldestObj).intValue();
-        return new QueueMetrics(name, len, /*newestMsgAgeSec=*/ null, oldest, total, Instant.now());
+        Object newestObj = rs.getObject("newest_msg_age_seconds");
+        Integer newest = newestObj == null ? null : ((Number) newestObj).intValue();
+        return new QueueMetrics(name, len, newest, oldest, total, Instant.now());
     }
 
     private static String encode(Map<String, Object> message) {

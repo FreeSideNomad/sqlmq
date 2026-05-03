@@ -277,6 +277,7 @@ public final class SqlmqClient {
                     rs.getLong("queue_length"),
                     rs.getLong("total_messages"),
                     (Integer) rs.getObject("oldest_msg_age_seconds"),
+                    (Integer) rs.getObject("newest_msg_age_seconds"),
                     rs.getLong("dlq_count"));
             }
         }
@@ -293,6 +294,7 @@ public final class SqlmqClient {
                         rs.getLong("queue_length"),
                         rs.getLong("total_messages"),
                         (Integer) rs.getObject("oldest_msg_age_seconds"),
+                        (Integer) rs.getObject("newest_msg_age_seconds"),
                         rs.getLong("dlq_count")));
             }
         }
@@ -330,5 +332,6 @@ public final class SqlmqClient {
         String groupKey, String message, byte[] messageBin, String headers) {}
 
     public record Metrics(String queueName, long queueLength, long totalMessages,
-                          Integer oldestMsgAgeSeconds, long dlqCount) {}
+                          Integer oldestMsgAgeSeconds, Integer newestMsgAgeSeconds,
+                          long dlqCount) {}
 }

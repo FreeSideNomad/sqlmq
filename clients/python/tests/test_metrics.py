@@ -15,8 +15,9 @@ def test_metrics_for_empty_queue(queue_factory):
     assert m.queue_name == name
     assert m.queue_length == 0
     assert m.total_messages == 0
-    # newest_msg_age_sec is always None for sqlmq.
+    # Empty queue: MIN/MAX(enqueued_at) are NULL → both ages None.
     assert m.newest_msg_age_sec is None
+    assert m.oldest_msg_age_sec is None
 
 
 def test_metrics_after_sends(queue_factory):
@@ -27,6 +28,12 @@ def test_metrics_after_sends(queue_factory):
     m = q.metrics(name)
     assert m.queue_length == 3
     assert m.total_messages == 3
+    # V016: newest_msg_age_sec now surfaced. Should be a small non-negative
+    # int — we just sent the messages.
+    assert m.newest_msg_age_sec is not None
+    assert isinstance(m.newest_msg_age_sec, int)
+    assert m.newest_msg_age_sec >= 0
+    assert m.newest_msg_age_sec < 60  # sanity: tests run faster than a minute
 
 
 def test_metrics_all_returns_every_queue(queue_factory):

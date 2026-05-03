@@ -30,24 +30,34 @@ public final class TvpHelpers {
     private TvpHelpers() {}
 
     /**
+     * Build a {@code dbo.sqlmq_send_tvp} table with no headers
+     * (delegates to {@link #buildSendTvp(Iterable, int, String)} with
+     * {@code encodedHeaders=null}).
+     */
+    public static SQLServerDataTable buildSendTvp(Iterable<String> jsonMessages, int delaySeconds)
+            throws SQLException {
+        return buildSendTvp(jsonMessages, delaySeconds, null);
+    }
+
+    /**
      * Build a {@code dbo.sqlmq_send_tvp} table.
      *
      * <p>Columns: {@code (message NVARCHAR(MAX), message_bin VARBINARY(MAX),
      * headers NVARCHAR(MAX), delay_seconds INT)}.</p>
      *
-     * <p>For JSON-payload queues we always set {@code message_bin} and
-     * {@code headers} to {@code NULL}. The strict pgmq-compat client does
-     * not surface binary payloads or headers.</p>
+     * <p>For JSON-payload queues we always set {@code message_bin} to
+     * {@code NULL}. {@code encodedHeaders} (a JSON-encoded string, or
+     * {@code null}) is applied uniformly to every row in the batch.</p>
      */
-    public static SQLServerDataTable buildSendTvp(Iterable<String> jsonMessages, int delaySeconds)
-            throws SQLException {
+    public static SQLServerDataTable buildSendTvp(Iterable<String> jsonMessages, int delaySeconds,
+                                                  String encodedHeaders) throws SQLException {
         var t = new SQLServerDataTable();
         t.addColumnMetadata("message",       Types.NVARCHAR);
         t.addColumnMetadata("message_bin",   Types.VARBINARY);
         t.addColumnMetadata("headers",       Types.NVARCHAR);
         t.addColumnMetadata("delay_seconds", Types.INTEGER);
         for (var msg : jsonMessages) {
-            t.addRow(msg, null, null, delaySeconds);
+            t.addRow(msg, null, encodedHeaders, delaySeconds);
         }
         return t;
     }

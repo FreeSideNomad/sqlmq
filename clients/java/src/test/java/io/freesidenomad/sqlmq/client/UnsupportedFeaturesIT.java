@@ -8,7 +8,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 import javax.sql.DataSource;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** pgmq features sqlmq does not support throw {@link UnsupportedOperationException}. */
@@ -16,10 +18,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class UnsupportedFeaturesIT {
 
     private PgmqClient q;
+    private AsyncPgmqClient async;
 
     @BeforeAll
     void init(DataSource ds) {
         q = new PgmqClient(ds);
+        async = new AsyncPgmqClient(ds);
     }
 
     @Test
@@ -39,6 +43,30 @@ class UnsupportedFeaturesIT {
         assertThatThrownBy(() -> q.createPartitionedQueue(TestQueues.uniqueName("q")))
             .isInstanceOf(UnsupportedOperationException.class)
             .hasMessageContaining("partition");
+    }
+
+    /** Audit fix: dropQueue(queue, true) used to silently ignore the flag. */
+    @Test
+    void dropQueuePartitionedTrueRejected() {
+        var name = TestQueues.uniqueName("q");
+        q.createQueue(name);
+        assertThatThrownBy(() -> q.dropQueue(name, /*partitioned=*/ true))
+            .isInstanceOf(UnsupportedOperationException.class)
+            .hasMessageContaining("partition");
+        // The queue must still exist — we did NOT drop it.
+        assertThat(q.listQueues()).contains(name);
+    }
+
+    /** Async parity for dropQueuePartitionedTrueRejected. */
+    @Test
+    void asyncDropQueuePartitionedTrueRejected() {
+        var name = TestQueues.uniqueName("q");
+        q.createQueue(name);
+        assertThatThrownBy(() -> async.dropQueue(name, /*partitioned=*/ true).get())
+            .isInstanceOf(ExecutionException.class)
+            .hasCauseInstanceOf(UnsupportedOperationException.class)
+            .hasMessageContaining("partition");
+        assertThat(q.listQueues()).contains(name);
     }
 
     @Test

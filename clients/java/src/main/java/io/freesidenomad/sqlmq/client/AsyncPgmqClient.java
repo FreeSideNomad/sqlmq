@@ -97,6 +97,12 @@ public final class AsyncPgmqClient implements AutoCloseable {
         return supply(() -> sync.dropQueue(queue));
     }
 
+    /**
+     * Drop a queue. {@code partitioned} must be {@code false}; passing
+     * {@code true} causes the returned future to complete exceptionally
+     * with {@link UnsupportedOperationException}. See
+     * {@link PgmqClient#dropQueue(String, boolean)} for rationale.
+     */
     public CompletableFuture<Boolean> dropQueue(String queue, boolean partitioned) {
         return supply(() -> sync.dropQueue(queue, partitioned));
     }
@@ -113,12 +119,26 @@ public final class AsyncPgmqClient implements AutoCloseable {
         return supply(() -> sync.send(queue, message, delaySeconds));
     }
 
+    /** sqlmq extension: send with optional headers map. See
+     * {@link PgmqClient#send(String, Map, int, Map)}. */
+    public CompletableFuture<Long> send(String queue, Map<String, Object> message, int delaySeconds,
+                                        Map<String, Object> headers) {
+        return supply(() -> sync.send(queue, message, delaySeconds, headers));
+    }
+
     public CompletableFuture<List<Long>> sendBatch(String queue, List<Map<String, Object>> messages) {
         return supply(() -> sync.sendBatch(queue, messages));
     }
 
     public CompletableFuture<List<Long>> sendBatch(String queue, List<Map<String, Object>> messages, int delaySeconds) {
         return supply(() -> sync.sendBatch(queue, messages, delaySeconds));
+    }
+
+    /** sqlmq extension: sendBatch with optional headers map applied uniformly.
+     * See {@link PgmqClient#sendBatch(String, List, int, Map)}. */
+    public CompletableFuture<List<Long>> sendBatch(String queue, List<Map<String, Object>> messages,
+                                                   int delaySeconds, Map<String, Object> headers) {
+        return supply(() -> sync.sendBatch(queue, messages, delaySeconds, headers));
     }
 
     public CompletableFuture<Optional<Message>> read(String queue) {

@@ -81,11 +81,11 @@ asyncio.run(main())
 | `create_queue(queue)` | OK | Maps to `EXEC sqlmq.create_queue` with `@storage='ondisk'`, `@grouped=0`, `@payload_type='json'`. |
 | `create_queue(queue, unlogged=True)` | **`NotImplementedError`** | sqlmq retired its in-memory variant in V014 (it lost its perf advantage after durability hardening). |
 | `create_partitioned_queue(...)` | **`NotImplementedError`** | Depends on `pg_partman`; no SQL Server equivalent. Tracked for a future release. |
-| `drop_queue(queue)` | OK | Returns `True` if dropped, `False` if missing. The `partitioned=` kwarg is accepted but ignored. |
+| `drop_queue(queue)` | OK | Returns `True` if dropped, `False` if missing. `partitioned=True` raises `NotImplementedError` (sqlmq has no partitioned queues; mirrors the rejection in `create_partitioned_queue`). |
 | `list_queues()` | OK | |
 | `validate_queue_name(name)` | OK (client-side) | Mirrors V003 hardening: `^[A-Za-z_][A-Za-z0-9_]{0,59}$`. Raises `ValueError` on mismatch. |
-| `send(queue, message, delay=0)` | OK | `tz=` is rejected with `NotImplementedError` (sqlmq is UTC-only and accepts integer `delay_seconds`). |
-| `send_batch(queue, messages, delay=0)` | OK | Single round trip: declares a `dbo.sqlmq_send_tvp` variable, populates via `INSERT VALUES`, then `EXEC sqlmq.send_batch`. Same `tz=` caveat. |
+| `send(queue, message, delay=0, headers=None)` | OK | `tz=` is rejected with `NotImplementedError` (sqlmq is UTC-only and accepts integer `delay_seconds`). `headers=` is a sqlmq extension to the strict pgmq 0.10 surface — JSON-encoded and stored on the row; visible to consumers via `Message.headers`. |
+| `send_batch(queue, messages, delay=0, headers=None)` | OK | Single round trip: declares a `dbo.sqlmq_send_tvp` variable, populates via `INSERT VALUES`, then `EXEC sqlmq.send_batch`. Same `tz=` caveat. `headers=` (sqlmq extension) is applied uniformly to every message in the batch. |
 | `read(queue, vt=None)` | OK | `vt` defaults to 30 (matches pgmq default). Returns `Message` or `None`. |
 | `read_batch(queue, vt=None, batch_size=1)` | OK | Returns `[]` (not `None`) when empty — matches the pgmq client's actual runtime behavior. |
 | `read_with_poll(queue, ...)` | OK (client-side polling) | sqlmq has no server-side long-poll (deliberate; see `research/sqlserver-longpoll.md`). We implement Hangfire-style backoff: loop calling `read_batch` with `time.sleep(poll_interval_ms/1000)` between empty results until first hit or `max_poll_seconds` elapsed. |
@@ -95,15 +95,22 @@ asyncio.run(main())
 | `archive(queue, msg_id)` | OK | |
 | `archive_batch(queue, msg_ids)` | OK (with extra round trip) | Same shape note as `delete_batch`. |
 | `purge(queue)` | OK | Returns the count purged. |
-| `metrics(queue)` | OK (with caveats) | `newest_msg_age_sec` is always `None` (sqlmq does not surface it). `scrape_time` is filled client-side from `datetime.utcnow()`. |
-| `metrics_all()` | OK (with caveats) | Same caveats as `metrics`. |
+| `metrics(queue)` | OK | `scrape_time` is filled client-side from `datetime.utcnow()`. Both `oldest_msg_age_sec` and `newest_msg_age_sec` are surfaced from the proc (since V016). |
+| `metrics_all()` | OK | Same shape as `metrics`. |
 | `set_vt(queue, msg_id, vt)` | **`NotImplementedError`** | Tracked for a future release; would require a `sqlmq.set_vt` stored proc. |
 | `detach_archive(queue)` | **`NotImplementedError`** | pgmq-specific feature for partitioned archive tables; sqlmq archives are single-table per queue. |
 
-## sqlmq-extension features (not exposed via this client)
+## sqlmq-extension features (small departures from strict pgmq 0.10)
 
-This client is **strict pgmq-compat**: it deliberately does *not* expose
-sqlmq's superset features:
+This client is **mostly strict pgmq-compat**, with one small superset:
+
+* `send(..., headers=...)` and `send_batch(..., headers=...)` accept an
+  optional dict (sqlmq stores it on the row's `headers` column). The
+  read-back `Message.headers` field surfaces it. pgmq 0.10's `send` does
+  not carry headers, so consumers writing strict-pgmq-portable code can
+  simply omit the kwarg.
+
+The following sqlmq features are deliberately **not** exposed:
 
 * grouped queues (`@grouped=1`) and `read_grouped`
 * binary payloads (`@payload_type='binary'`)

@@ -31,8 +31,9 @@ class MetricsIT {
         assertThat(m.queueName()).isEqualTo(name);
         assertThat(m.queueLength()).isEqualTo(0);
         assertThat(m.totalMessages()).isEqualTo(0);
-        // sqlmq does not surface newest_msg_age_sec.
+        // Empty queue: MIN/MAX(enqueued_at) are NULL → both ages null.
         assertThat(m.newestMsgAgeSec()).isNull();
+        assertThat(m.oldestMsgAgeSec()).isNull();
     }
 
     @Test
@@ -45,6 +46,11 @@ class MetricsIT {
         var m = q.metrics(name);
         assertThat(m.queueLength()).isEqualTo(3);
         assertThat(m.totalMessages()).isEqualTo(3);
+        // V016: newest_msg_age_sec is now populated. Tests run faster than a
+        // minute, so it should be a small non-negative int.
+        assertThat(m.newestMsgAgeSec()).isNotNull();
+        assertThat(m.newestMsgAgeSec()).isGreaterThanOrEqualTo(0);
+        assertThat(m.newestMsgAgeSec()).isLessThan(60);
     }
 
     @Test

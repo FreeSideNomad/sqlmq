@@ -60,11 +60,16 @@ def msg_id_tvp_rows(msg_ids: Iterable[int]) -> list[tuple[int]]:
     return [(int(i),) for i in msg_ids]
 
 
-def send_tvp_rows(messages: Sequence[dict], delay: int) -> list[tuple]:
+def send_tvp_rows(
+    messages: Sequence[dict], delay: int, headers: Any = None
+) -> list[tuple]:
     """Build the row sequence for a ``dbo.sqlmq_send_tvp`` parameter.
 
     Columns: (message NVARCHAR(MAX), message_bin VARBINARY(MAX),
               headers NVARCHAR(MAX), delay_seconds INT).
-    For JSON-payload queues we always set message_bin/headers to None.
+    For JSON-payload queues we always set message_bin to None. ``headers``
+    is JSON-encoded once and applied to every row in the batch (or left
+    NULL when omitted).
     """
-    return [(encode_message(m), None, None, int(delay)) for m in messages]
+    encoded_headers = encode_message(headers) if headers is not None else None
+    return [(encode_message(m), None, encoded_headers, int(delay)) for m in messages]

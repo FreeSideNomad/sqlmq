@@ -29,11 +29,10 @@ def test_drop_returns_false_when_absent(queue_factory):
     assert q.drop_queue(name) is False
 
 
-def test_drop_partitioned_kwarg_is_ignored(queue_factory):
-    q = queue_factory()
-    name = unique_queue_name()
-    q.create_queue(name)
-    assert q.drop_queue(name, partitioned=True) is True
+# The formerly-passing test_drop_partitioned_kwarg_is_ignored has moved to
+# tests/test_unsupported.py::test_drop_queue_partitioned_raises — sqlmq now
+# rejects drop_queue(name, partitioned=True) with NotImplementedError to avoid
+# masking caller intent.
 
 
 def test_validate_queue_name_accepts_legal_names(queue_factory):

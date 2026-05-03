@@ -97,6 +97,15 @@ class AsyncPGMQueue:
         )
 
     async def drop_queue(self, queue: str, partitioned: bool = False, conn=None) -> bool:
+        """Drop a queue. ``partitioned`` must be ``False`` (or omitted);
+        ``True`` raises ``NotImplementedError``. See :meth:`PGMQueue.drop_queue`
+        for rationale."""
+        if partitioned:
+            raise NotImplementedError(
+                "sqlmq does not support partitioned queues; partitioned=True is "
+                "rejected to avoid masking caller intent. See create_partitioned_queue "
+                "for the same rationale."
+            )
         return await asyncio.to_thread(self._sync.drop_queue, queue, partitioned, conn)
 
     async def list_queues(self, conn=None) -> List[str]:
@@ -109,8 +118,11 @@ class AsyncPGMQueue:
         delay: int = 0,
         tz: Optional[datetime] = None,
         conn=None,
+        headers: Optional[dict] = None,
     ) -> int:
-        return await asyncio.to_thread(self._sync.send, queue, message, delay, tz, conn)
+        return await asyncio.to_thread(
+            self._sync.send, queue, message, delay, tz, conn, headers
+        )
 
     async def send_batch(
         self,
@@ -119,8 +131,11 @@ class AsyncPGMQueue:
         delay: int = 0,
         tz: Optional[datetime] = None,
         conn=None,
+        headers: Optional[dict] = None,
     ) -> List[int]:
-        return await asyncio.to_thread(self._sync.send_batch, queue, messages, delay, tz, conn)
+        return await asyncio.to_thread(
+            self._sync.send_batch, queue, messages, delay, tz, conn, headers
+        )
 
     async def read(self, queue: str, vt: Optional[int] = None, conn=None) -> Optional[Message]:
         return await asyncio.to_thread(self._sync.read, queue, vt, conn)

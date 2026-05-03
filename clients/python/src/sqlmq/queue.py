@@ -255,9 +255,17 @@ class PGMQueue:
     def drop_queue(self, queue: str, partitioned: bool = False, conn=None) -> bool:
         """Drop a queue. Returns ``True`` if dropped, ``False`` if it didn't exist.
 
-        ``partitioned`` is accepted for signature compatibility but ignored —
-        sqlmq has no partitioned queues.
+        ``partitioned`` must be ``False`` (or omitted); ``True`` raises
+        ``NotImplementedError`` to avoid masking caller intent. sqlmq has no
+        partitioned queues — see :meth:`create_partitioned_queue` for the
+        same rationale.
         """
+        if partitioned:
+            raise NotImplementedError(
+                "sqlmq does not support partitioned queues; partitioned=True is "
+                "rejected to avoid masking caller intent. See create_partitioned_queue "
+                "for the same rationale."
+            )
         _validate_name(queue)
         with self._scope(conn) as (_c, cur):
             try:
@@ -283,12 +291,18 @@ class PGMQueue:
         delay: int = 0,
         tz: Optional[datetime] = None,
         conn=None,
+        headers: Optional[dict] = None,
     ) -> int:
         """Send a single message. Returns the new ``msg_id``.
 
         ``tz`` (delay-until-timestamp) is not supported — sqlmq operates in
         UTC and only accepts ``delay_seconds``. Passing ``tz`` raises
         ``NotImplementedError`` rather than silently being ignored.
+
+        ``headers`` is a sqlmq extension to the strict pgmq 0.10 surface
+        (pgmq's ``send`` does not accept headers). When provided, the dict
+        is JSON-encoded and stored in the row's ``headers`` column, where
+        :class:`Message` consumers will see it on read/pop.
         """
         if tz is not None:
             raise NotImplementedError(
@@ -298,9 +312,10 @@ class PGMQueue:
             )
         _validate_name(queue)
         encoded = _sql.encode_message(message)
+        encoded_headers = _sql.encode_message(headers) if headers is not None else None
         with self._scope(conn) as (_c, cur):
             # @queue, @message, @message_bin, @headers, @delay_seconds
-            cur.execute(_sql.SEND, queue, encoded, None, None, int(delay))
+            cur.execute(_sql.SEND, queue, encoded, None, encoded_headers, int(delay))
             rows = self._drain_to_first_resultset(cur)
             if not rows:
                 raise RuntimeError("sqlmq.send returned no rows; expected msg_id")
@@ -313,6 +328,7 @@ class PGMQueue:
         delay: int = 0,
         tz: Optional[datetime] = None,
         conn=None,
+        headers: Optional[dict] = None,
     ) -> List[int]:
         """Send a batch of messages. Returns the new msg_ids in caller order.
 
@@ -320,6 +336,10 @@ class PGMQueue:
         passing for ``EXEC``, so we emit a single batch that declares a TVP
         variable, populates it via ``INSERT...VALUES``, and ``EXEC``s the
         proc. One round trip per ``send_batch`` call.
+
+        ``headers`` is a sqlmq extension applied uniformly to every message
+        in the batch (same JSON encoding as :meth:`send`). For per-message
+        headers, call :meth:`send` in a loop or extend the TVP shape.
         """
         if tz is not None:
             raise NotImplementedError(
@@ -329,7 +349,7 @@ class PGMQueue:
         if not messages:
             return []
 
-        rows = _sql.send_tvp_rows(messages, delay)
+        rows = _sql.send_tvp_rows(messages, delay, headers)
         # rows: [(message, message_bin, headers, delay_seconds), ...]
         # Build a parameterized VALUES clause. Each row contributes 4 params.
         values_clause = ",".join(["(?, ?, ?, ?)"] * len(rows))
@@ -362,16 +382,22 @@ class PGMQueue:
         but ``sqlmq.pop`` returns
             (msg_id, read_ct, enqueued_at, vt, message, headers).
         We drive off the cursor's ``description`` to find the ``message``
-        column by name rather than by positional offset.
+        and ``headers`` columns by name rather than by positional offset.
         """
         names = [d[0] for d in description]
-        idx = names.index("message")
+        msg_idx = names.index("message")
+        headers: Optional[dict] = None
+        if "headers" in names:
+            raw = row[names.index("headers")]
+            if raw is not None:
+                headers = _sql.decode_message(raw)
         return Message(
             msg_id=int(row[0]),
             read_ct=int(row[1]),
             enqueued_at=row[2],
             vt=row[3],
-            message=_sql.decode_message(row[idx]),
+            message=_sql.decode_message(row[msg_idx]),
+            headers=headers,
         )
 
     def read(self, queue: str, vt: Optional[int] = None, conn=None) -> Optional[Message]:
@@ -578,12 +604,12 @@ class PGMQueue:
             if not rows:
                 raise RuntimeError(f"sqlmq.metrics returned no rows for queue {queue!r}")
             row = rows[0]
-            # sqlmq columns: queue_name, queue_length, total_messages,
-            # oldest_msg_age_seconds, dlq_count.
+            # sqlmq columns (V016+): queue_name, queue_length, total_messages,
+            # oldest_msg_age_seconds, newest_msg_age_seconds, dlq_count.
             return QueueMetrics(
                 queue_name=str(row[0]),
                 queue_length=int(row[1] or 0),
-                newest_msg_age_sec=None,
+                newest_msg_age_sec=int(row[4]) if row[4] is not None else None,
                 oldest_msg_age_sec=int(row[3]) if row[3] is not None else None,
                 total_messages=int(row[2] or 0),
                 scrape_time=_sql.utcnow(),
@@ -601,7 +627,7 @@ class PGMQueue:
                     QueueMetrics(
                         queue_name=str(row[0]),
                         queue_length=int(row[1] or 0),
-                        newest_msg_age_sec=None,
+                        newest_msg_age_sec=int(row[4]) if row[4] is not None else None,
                         oldest_msg_age_sec=int(row[3]) if row[3] is not None else None,
                         total_messages=int(row[2] or 0),
                         scrape_time=now,

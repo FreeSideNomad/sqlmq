@@ -110,4 +110,44 @@ class SendReadIT {
         assertThat(msg).isPresent();
         assertThat(msg.get().message()).containsEntry("a", 1);
     }
+
+    /** sqlmq extension: headers passed to send must round-trip on read. */
+    @Test
+    void sendWithHeadersRoundTrips() {
+        var name = TestQueues.uniqueName("q");
+        q.createQueue(name);
+        q.send(name, Map.of("payload", "x"), 0, Map.of("trace_id", "abc", "user", "x"));
+        var got = q.read(name);
+        assertThat(got).isPresent();
+        var m = got.get();
+        assertThat(m.message()).containsEntry("payload", "x");
+        assertThat(m.headers())
+            .isNotNull()
+            .containsEntry("trace_id", "abc")
+            .containsEntry("user", "x");
+    }
+
+    @Test
+    void sendWithoutHeadersYieldsNullHeaders() {
+        var name = TestQueues.uniqueName("q");
+        q.createQueue(name);
+        q.send(name, Map.of("payload", "x"));
+        var got = q.read(name);
+        assertThat(got).isPresent();
+        assertThat(got.get().headers()).isNull();
+    }
+
+    @Test
+    void sendBatchWithHeadersAppliesUniformly() {
+        var name = TestQueues.uniqueName("q");
+        q.createQueue(name);
+        var msgs = new ArrayList<Map<String, Object>>();
+        for (int i = 0; i < 3; i++) msgs.add(Map.of("i", i));
+        q.sendBatch(name, msgs, 0, Map.of("trace_id", "batch-1"));
+        var got = q.readBatch(name, 30, 10);
+        assertThat(got).hasSize(3);
+        for (var m : got) {
+            assertThat(m.headers()).isNotNull().containsEntry("trace_id", "batch-1");
+        }
+    }
 }

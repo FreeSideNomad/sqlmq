@@ -90,3 +90,45 @@ def test_send_with_tz_raises(queue_factory):
     q.create_queue(name)
     with pytest.raises(NotImplementedError, match="tz"):
         q.send(name, {"a": 1}, tz=datetime.now(timezone.utc))
+
+
+def test_send_with_headers_round_trips(queue_factory):
+    """Headers passed to send() must be visible on the read-back Message.
+
+    Audit fix: the lib's row decoder used to read the headers column then
+    discard it (Message had no headers field). Now Message carries them.
+    """
+    q = queue_factory()
+    name = unique_queue_name()
+    q.create_queue(name)
+    q.send(name, {"payload": "x"}, headers={"trace_id": "abc", "user": "x"})
+    msg = q.read(name)
+    assert msg is not None
+    assert msg.message == {"payload": "x"}
+    assert msg.headers == {"trace_id": "abc", "user": "x"}
+
+
+def test_send_without_headers_yields_none(queue_factory):
+    q = queue_factory()
+    name = unique_queue_name()
+    q.create_queue(name)
+    q.send(name, {"payload": "x"})  # no headers
+    msg = q.read(name)
+    assert msg is not None
+    assert msg.headers is None
+
+
+def test_send_batch_with_headers_round_trips(queue_factory):
+    q = queue_factory()
+    name = unique_queue_name()
+    q.create_queue(name)
+    ids = q.send_batch(
+        name,
+        [{"i": i} for i in range(3)],
+        headers={"trace_id": "batch-1"},
+    )
+    assert len(ids) == 3
+    msgs = q.read_batch(name, batch_size=10)
+    assert len(msgs) == 3
+    for m in msgs:
+        assert m.headers == {"trace_id": "batch-1"}
