@@ -3,11 +3,10 @@ package io.freesidenomad.sqlmq.correctness;
 import io.freesidenomad.sqlmq.client.SqlmqClient;
 import io.freesidenomad.sqlmq.support.DatabasePerTest;
 import io.freesidenomad.sqlmq.support.TestQueues;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.ExtensionContext;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -18,24 +17,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExtendWith(DatabasePerTest.class)
 class PurgeDlqSweepTest {
 
-    @ParameterizedTest
-    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
-    void purgeRemovesAllMessages(String storage, ExtensionContext ctx) throws Exception {
+    @Test
+    void purgeRemovesAllMessages(ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, storage, false, "json", null);
+        client.createQueue(q, false, "json", null);
         for (int i = 0; i < 10; i++) client.send(q, "{}", null);
         var purged = client.purgeQueue(q);
         assertThat(purged).isEqualTo(10);
         assertThat(client.metrics(q).queueLength()).isZero();
     }
 
-    @ParameterizedTest
-    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
-    void dlqSweepNoOpWhenMaxDeliveryCountNull(String storage, ExtensionContext ctx) throws Exception {
+    @Test
+    void dlqSweepNoOpWhenMaxDeliveryCountNull(ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, storage, false, "json", null);
+        client.createQueue(q, false, "json", null);
         client.send(q, "{}", null);
         for (int i = 0; i < 5; i++) {
             var msgs = client.read(q, 1, 10);
@@ -45,12 +42,11 @@ class PurgeDlqSweepTest {
         assertThat(swept).isZero();
     }
 
-    @ParameterizedTest
-    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
-    void dlqSweepMovesOverCapMessagesWithReason(String storage, ExtensionContext ctx) throws Exception {
+    @Test
+    void dlqSweepMovesOverCapMessagesWithReason(ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, storage, false, "json", 2);
+        client.createQueue(q, false, "json", 2);
         var id = client.send(q, "{}", null);
 
         for (int i = 0; i < 3; i++) {
@@ -72,12 +68,11 @@ class PurgeDlqSweepTest {
         }
     }
 
-    @ParameterizedTest
-    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
-    void readSkipsOverCapMessagesEvenBeforeSweep(String storage, ExtensionContext ctx) throws Exception {
+    @Test
+    void readSkipsOverCapMessagesEvenBeforeSweep(ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, storage, false, "json", 2);
+        client.createQueue(q, false, "json", 2);
         client.send(q, "{}", null);
 
         for (int i = 0; i < 2; i++) {

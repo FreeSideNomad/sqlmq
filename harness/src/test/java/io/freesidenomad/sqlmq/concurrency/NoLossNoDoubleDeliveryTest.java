@@ -20,21 +20,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExtendWith(DatabasePerTest.class)
 class NoLossNoDoubleDeliveryTest {
 
-    static Stream<Arguments> profilesAndStorage() {
-        // V014: in-memory storage retired — only on-disk runs now.
+    static Stream<Arguments> profiles() {
         // heavy/asymmetric stay out of CI by default — opt in locally.
         return Stream.of(
-            Arguments.of(Profile.light(),  "ondisk"),
-            Arguments.of(Profile.medium(), "ondisk")
+            Arguments.of(Profile.light()),
+            Arguments.of(Profile.medium())
         );
     }
 
     @ParameterizedTest
-    @MethodSource("profilesAndStorage")
-    void everyProducedMessageIsDeliveredExactlyOnce(Profile p, String storage, ExtensionContext ctx) throws Exception {
+    @MethodSource("profiles")
+    void everyProducedMessageIsDeliveredExactlyOnce(Profile p, ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, storage, false, "json", null);
+        client.createQueue(q, false, "json", null);
 
         var result = ConcurrencyHarness.run(client, q, p);
 

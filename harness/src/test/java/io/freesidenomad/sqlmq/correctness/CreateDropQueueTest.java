@@ -24,7 +24,7 @@ class CreateDropQueueTest {
         var client = new SqlmqClient(ds);
         var name = TestQueues.uniqueName("q");
 
-        client.createQueue(name, "ondisk", false, "json", null);
+        client.createQueue(name, false, "json", null);
 
         var listed = client.listQueues();
         assertThat(listed).extracting(SqlmqClient.QueueInfo::name).contains(name);
@@ -39,7 +39,7 @@ class CreateDropQueueTest {
     void createWithGroupingAndDlqCap(ExtensionContext ctx) throws SQLException {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var name = TestQueues.uniqueName("q");
-        client.createQueue(name, "ondisk", true, "binary", 5);
+        client.createQueue(name, true, "binary", 5);
         var info = client.listQueues().stream()
             .filter(q -> q.name().equals(name)).findFirst().orElseThrow();
         assertThat(info.grouped()).isTrue();
@@ -48,21 +48,31 @@ class CreateDropQueueTest {
     }
 
     @Test
-    void inmemoryStorageRejected(ExtensionContext ctx) {
-        // V014 retires the in-memory storage variant. create_queue must throw
-        // a clear message pointing operators at @storage='ondisk'.
-        var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
+    void inmemoryStorageRejectedAtSqlLayer(ExtensionContext ctx) throws SQLException {
+        // V014 retired in-memory; V015 narrowed CK_sqlmq_meta_storage_type to
+        // ondisk-only and re-CREATEd create_queue with an explicit THROW. The
+        // Java client no longer exposes a @storage parameter, so we drive the
+        // proc directly to exercise the SQL-layer guard.
+        var ds = DatabasePerTest.dataSource(ctx);
         var name = TestQueues.uniqueName("q");
-        assertThatThrownBy(() -> client.createQueue(name, "inmemory", false, "json", null))
-            .hasMessageContaining("In-memory storage is not supported");
+        try (var c = ds.getConnection();
+             var cs = c.prepareCall("{call sqlmq.create_queue(?, ?, ?, ?, ?)}")) {
+            cs.setString(1, name);
+            cs.setString(2, "inmemory");
+            cs.setBoolean(3, false);
+            cs.setString(4, "json");
+            cs.setNull(5, java.sql.Types.INTEGER);
+            assertThatThrownBy(cs::execute)
+                .hasMessageContaining("In-memory storage is not supported");
+        }
     }
 
     @Test
     void duplicateCreateFails(ExtensionContext ctx) throws SQLException {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var name = TestQueues.uniqueName("q");
-        client.createQueue(name, "ondisk", false, "json", null);
-        assertThatThrownBy(() -> client.createQueue(name, "ondisk", false, "json", null))
+        client.createQueue(name, false, "json", null);
+        assertThatThrownBy(() -> client.createQueue(name, false, "json", null))
             .hasMessageContaining("already exists");
     }
 
@@ -71,7 +81,7 @@ class CreateDropQueueTest {
         var ds = DatabasePerTest.dataSource(ctx);
         var client = new SqlmqClient(ds);
         var name = TestQueues.uniqueName("q");
-        client.createQueue(name, "ondisk", false, "json", null);
+        client.createQueue(name, false, "json", null);
         client.dropQueue(name);
 
         assertThat(client.listQueues()).extracting(SqlmqClient.QueueInfo::name).doesNotContain(name);
@@ -94,7 +104,7 @@ class CreateDropQueueTest {
     @Test
     void rejectsEmptyName(ExtensionContext ctx) {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
-        assertThatThrownBy(() -> client.createQueue("", "ondisk", false, "json", null))
+        assertThatThrownBy(() -> client.createQueue("", false, "json", null))
             .hasMessageContaining("@name must be non-empty");
     }
 
@@ -102,7 +112,7 @@ class CreateDropQueueTest {
     void rejectsNameWithSqlInjectionAttempt(ExtensionContext ctx) {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         assertThatThrownBy(() -> client.createQueue("foo]; DROP TABLE sqlmq.meta; --",
-            "ondisk", false, "json", null))
+            false, "json", null))
             .hasMessageContaining("may only contain letters, digits, and underscores");
     }
 
@@ -110,24 +120,15 @@ class CreateDropQueueTest {
     void rejectsNameTooLong(ExtensionContext ctx) {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var longName = "q".repeat(61);
-        assertThatThrownBy(() -> client.createQueue(longName, "ondisk", false, "json", null))
+        assertThatThrownBy(() -> client.createQueue(longName, false, "json", null))
             .hasMessageContaining("60 characters or fewer");
     }
 
     @Test
     void rejectsNameStartingWithDigit(ExtensionContext ctx) {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
-        assertThatThrownBy(() -> client.createQueue("1foo", "ondisk", false, "json", null))
+        assertThatThrownBy(() -> client.createQueue("1foo", false, "json", null))
             .hasMessageContaining("must start with a letter or underscore");
-    }
-
-    @Test
-    void normalizesMixedCaseStorage(ExtensionContext ctx) throws SQLException {
-        var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
-        var name = TestQueues.uniqueName("q");
-        client.createQueue(name, "OnDisk", false, "json", null);
-        var info = client.listQueues().stream().filter(q -> q.name().equals(name)).findFirst().orElseThrow();
-        assertThat(info.storageType()).isEqualTo("ondisk");
     }
 
     @Test
@@ -137,7 +138,7 @@ class CreateDropQueueTest {
         var name = TestQueues.uniqueName("q");
         // Simulate orphan: create the queue, then manually delete the meta row to mimic
         // a half-failed create.
-        client.createQueue(name, "ondisk", false, "json", null);
+        client.createQueue(name, false, "json", null);
         try (var c = ds.getConnection(); var st = c.createStatement()) {
             st.executeUpdate("DELETE FROM sqlmq.meta WHERE queue_name = '" + name + "'");
         }

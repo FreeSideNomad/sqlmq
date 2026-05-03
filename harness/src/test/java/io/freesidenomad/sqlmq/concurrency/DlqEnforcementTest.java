@@ -3,11 +3,10 @@ package io.freesidenomad.sqlmq.concurrency;
 import io.freesidenomad.sqlmq.client.SqlmqClient;
 import io.freesidenomad.sqlmq.support.DatabasePerTest;
 import io.freesidenomad.sqlmq.support.TestQueues;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.ExtensionContext;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -19,12 +18,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExtendWith(DatabasePerTest.class)
 class DlqEnforcementTest {
 
-    @ParameterizedTest
-    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
-    void messagesReachingMaxDeliveriesAreEventuallyArchived(String storage, ExtensionContext ctx) throws Exception {
+    @Test
+    void messagesReachingMaxDeliveriesAreEventuallyArchived(ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, storage, false, "json", 3);
+        client.createQueue(q, false, "json", 3);
 
         for (int i = 0; i < 100; i++) client.send(q, "{\"i\":" + i + "}", null);
 

@@ -18,13 +18,21 @@ public final class SqlmqClient {
         this.ds = ds;
     }
 
-    public void createQueue(String name, String storage, boolean grouped,
+    /**
+     * Create a queue. As of V014/V015 the only supported storage variant is
+     * on-disk; the {@code @storage} proc parameter is no longer surfaced
+     * through the client API. The Java client always passes
+     * {@code @storage='ondisk'} under the hood — sqlmq.create_queue's CHECK
+     * constraint and explicit THROW reject anything else, so callers cannot
+     * accidentally select a retired variant.
+     */
+    public void createQueue(String name, boolean grouped,
                             String payloadType, Integer maxDeliveryCount) throws SQLException {
         try (Connection c = ds.getConnection();
              CallableStatement cs = c.prepareCall(
                  "{call sqlmq.create_queue(?, ?, ?, ?, ?)}")) {
             cs.setString(1, name);
-            cs.setString(2, storage);
+            cs.setString(2, "ondisk");
             cs.setBoolean(3, grouped);
             cs.setString(4, payloadType);
             if (maxDeliveryCount == null) cs.setNull(5, java.sql.Types.INTEGER);

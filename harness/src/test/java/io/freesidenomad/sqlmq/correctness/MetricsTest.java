@@ -3,11 +3,10 @@ package io.freesidenomad.sqlmq.correctness;
 import io.freesidenomad.sqlmq.client.SqlmqClient;
 import io.freesidenomad.sqlmq.support.DatabasePerTest;
 import io.freesidenomad.sqlmq.support.TestQueues;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.ExtensionContext;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -15,12 +14,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExtendWith(DatabasePerTest.class)
 class MetricsTest {
 
-    @ParameterizedTest
-    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
-    void emptyQueueMetrics(String storage, ExtensionContext ctx) throws Exception {
+    @Test
+    void emptyQueueMetrics(ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, storage, false, "json", null);
+        client.createQueue(q, false, "json", null);
 
         var m = client.metrics(q);
         assertThat(m.queueName()).isEqualTo(q);
@@ -30,12 +28,11 @@ class MetricsTest {
         assertThat(m.dlqCount()).isZero();
     }
 
-    @ParameterizedTest
-    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
-    void metricsAfterSends(String storage, ExtensionContext ctx) throws Exception {
+    @Test
+    void metricsAfterSends(ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, storage, false, "json", null);
+        client.createQueue(q, false, "json", null);
 
         client.send(q, "{}", null);
         client.send(q, "{}", null);
@@ -46,14 +43,13 @@ class MetricsTest {
         assertThat(m.totalMessages()).isGreaterThanOrEqualTo(3);
     }
 
-    @ParameterizedTest
-    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
-    void metricsAllListsAllQueues(String storage, ExtensionContext ctx) throws Exception {
+    @Test
+    void metricsAllListsAllQueues(ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q1 = TestQueues.uniqueName("q");
         var q2 = TestQueues.uniqueName("q");
-        client.createQueue(q1, storage, false, "json", null);
-        client.createQueue(q2, storage, false, "json", null);
+        client.createQueue(q1, false, "json", null);
+        client.createQueue(q2, false, "json", null);
 
         var all = client.metricsAll();
         assertThat(all).extracting(SqlmqClient.Metrics::queueName).contains(q1, q2);

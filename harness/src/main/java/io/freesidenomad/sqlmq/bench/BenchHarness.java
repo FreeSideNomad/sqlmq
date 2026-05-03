@@ -32,6 +32,10 @@ public final class BenchHarness {
     /**
      * Per-run sample. {@code tps} is the headline metric (was {@code msgsPerSec} pre-v3).
      * {@code preload} and {@code msgSizeBytes} record the workload shape for the CSV/JSON exports.
+     *
+     * <p>The {@code storage} field is retained as a stable column for the CSV/JSON exports and
+     * always carries the literal {@code "ondisk"} since V014 retired the in-memory variant.
+     * Downstream tooling can keep grouping by it without code changes.</p>
      */
     public record RunResult(
         String profile,
@@ -50,6 +54,9 @@ public final class BenchHarness {
         long producerErrors,
         long consumerErrors
     ) {}
+
+    /** All runs are on-disk now (V014 retired in-memory). Used as the fixed storage label in {@link RunResult}. */
+    public static final String STORAGE_ONDISK = "ondisk";
 
     private static final AtomicLong QUEUE_SEQ = new AtomicLong();
 
@@ -70,10 +77,9 @@ public final class BenchHarness {
                                     String profileName,
                                     Profile profile,
                                     int preloadCount,
-                                    String storage,
                                     int runIndex) throws Exception {
         var q = uniqueQueueName("bench");
-        client.createQueue(q, storage, false, "json", null);
+        client.createQueue(q, false, "json", null);
 
         // Producer-side latency tracking: msg_id -> nanoTime at send completion.
         // Only populated for the preload phase; in-flight producers don't expose
@@ -110,7 +116,7 @@ public final class BenchHarness {
         double tps = delivered / Math.max(seconds, 0.001);
 
         return new RunResult(
-            profileName, storage, runIndex,
+            profileName, STORAGE_ONDISK, runIndex,
             profile.producers(), profile.consumers(), preloadCount, profile.messageSizeBytes(),
             tps,
             pct(latenciesNs, 50) / 1e6,
@@ -140,13 +146,12 @@ public final class BenchHarness {
                                     Profile profile,
                                     int consumers,
                                     int preloadCount,
-                                    String storage,
                                     int runIndex) throws Exception {
         if (preloadCount <= 0) {
             throw new IllegalArgumentException("runScan requires preloadCount > 0, got " + preloadCount);
         }
         var q = uniqueQueueName("scan");
-        client.createQueue(q, storage, false, "json", null);
+        client.createQueue(q, false, "json", null);
 
         var sendNanos = new ConcurrentHashMap<Long, Long>();
         try {
@@ -181,7 +186,7 @@ public final class BenchHarness {
             Collections.sort(latenciesNs);
 
             return new RunResult(
-                scanLabel, storage, runIndex,
+                scanLabel, STORAGE_ONDISK, runIndex,
                 0, consumers, preloadCount, profile.messageSizeBytes(),
                 tps,
                 pct(latenciesNs, 50) / 1e6,

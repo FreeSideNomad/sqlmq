@@ -7,8 +7,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.ExtensionContext;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -21,17 +19,16 @@ class ReadGroupedTest {
     void readGroupedRejectsUngroupedQueue(ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, "ondisk", false, "json", null);
+        client.createQueue(q, false, "json", null);
         assertThatThrownBy(() -> client.readGrouped(q, 30, 10))
             .hasMessageContaining("not created with grouping enabled");
     }
 
-    @ParameterizedTest
-    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
-    void groupedReadReturnsAtMostOnePerGroup(String storage, ExtensionContext ctx) throws Exception {
+    @Test
+    void groupedReadReturnsAtMostOnePerGroup(ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, storage, true, "json", null);
+        client.createQueue(q, true, "json", null);
 
         for (int g = 0; g < 3; g++)
             for (int i = 0; i < 5; i++)
@@ -42,12 +39,11 @@ class ReadGroupedTest {
         assertThat(first.stream().map(SqlmqClient.Message::msgId).distinct().count()).isEqualTo(3);
     }
 
-    @ParameterizedTest
-    @MethodSource("io.freesidenomad.sqlmq.support.StorageVariants#all")
-    void groupedReadBlocksFurtherFromSameGroupUntilDeleteOrVtExpiry(String storage, ExtensionContext ctx) throws Exception {
+    @Test
+    void groupedReadBlocksFurtherFromSameGroupUntilDeleteOrVtExpiry(ExtensionContext ctx) throws Exception {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var q = TestQueues.uniqueName("q");
-        client.createQueue(q, storage, true, "json", null);
+        client.createQueue(q, true, "json", null);
         client.sendGrouped(q, "{\"g\":0,\"i\":0}", "g0");
         client.sendGrouped(q, "{\"g\":0,\"i\":1}", "g0");
 

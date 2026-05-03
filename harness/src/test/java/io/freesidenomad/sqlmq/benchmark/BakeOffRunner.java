@@ -31,7 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @ExtendWith(DatabasePerTest.class)
 class BakeOffRunner {
 
-    private record RunResult(String profile, String storage, double tps,
+    private record RunResult(String profile, double tps,
                              double p50Ms, double p95Ms, double p99Ms, int delivered) {}
 
     @Test
@@ -39,40 +39,38 @@ class BakeOffRunner {
         var client = new SqlmqClient(DatabasePerTest.dataSource(ctx));
         var allRuns = new ArrayList<RunResult>();
         // Stable timestamped output dir, set up before any runs so partial results
-        // can be flushed after each (profile, storage) pair completes. This means
-        // a crash mid-bakeoff (OOM, surefire fork timeout, etc.) still leaves
-        // recoverable median data on disk.
+        // can be flushed after each profile completes. This means a crash mid-bakeoff
+        // (OOM, surefire fork timeout, etc.) still leaves recoverable median data on disk.
         var ts = Instant.now().toString().replace(':', '-');
         var dir = Path.of("target/bench-results", ts);
         Files.createDirectories(dir);
         System.out.println("Bake-off output dir: " + dir.toAbsolutePath());
 
+        // V014/V015 retired the in-memory storage variant; the bake-off iterates over
+        // profiles only. The pre-V014 (profile, storage) outer-product is gone.
         for (var named : BenchmarkProfiles.all()) {
-            // V014: in-memory storage retired — only on-disk runs now.
-            for (var storage : List.of("ondisk")) {
-                System.out.printf("%n=== %s [%s] ===%n", named.name(), storage);
-                var samples = new ArrayList<RunResult>();
-                for (int i = 0; i < 5; i++) {
-                    var sample = runOnce(client, named.name(), named.profile(),
-                                         named.preloadCount(), storage);
-                    samples.add(sample);
-                    System.out.printf("  run %d: %.0f TPS, p50=%.1fms p95=%.1fms p99=%.1fms delivered=%d%n",
-                        i + 1, sample.tps(), sample.p50Ms(), sample.p95Ms(),
-                        sample.p99Ms(), sample.delivered());
-                }
-                samples.sort(java.util.Comparator.comparingDouble(RunResult::tps));
-                allRuns.add(samples.get(2));  // median
-                writeResults(allRuns, dir);  // incremental flush after each pair
+            System.out.printf("%n=== %s [ondisk] ===%n", named.name());
+            var samples = new ArrayList<RunResult>();
+            for (int i = 0; i < 5; i++) {
+                var sample = runOnce(client, named.name(), named.profile(),
+                                     named.preloadCount());
+                samples.add(sample);
+                System.out.printf("  run %d: %.0f TPS, p50=%.1fms p95=%.1fms p99=%.1fms delivered=%d%n",
+                    i + 1, sample.tps(), sample.p50Ms(), sample.p95Ms(),
+                    sample.p99Ms(), sample.delivered());
             }
+            samples.sort(java.util.Comparator.comparingDouble(RunResult::tps));
+            allRuns.add(samples.get(2));  // median
+            writeResults(allRuns, dir);  // incremental flush after each profile
         }
 
         writeResults(allRuns, dir);
     }
 
     private RunResult runOnce(SqlmqClient client, String profileName, Profile profile,
-                              int preloadCount, String storage) throws Exception {
+                              int preloadCount) throws Exception {
         var q = TestQueues.uniqueName("bench");
-        client.createQueue(q, storage, false, "json", null);
+        client.createQueue(q, false, "json", null);
 
         // Producer-side latency tracking: msg_id -> nanoTime at send completion.
         var sendNanos = new ConcurrentHashMap<Long, Long>();
@@ -115,7 +113,7 @@ class BakeOffRunner {
         client.dropQueue(q);
 
         return new RunResult(
-            profileName, storage, tps,
+            profileName, tps,
             pct(latenciesNs, 50) / 1e6,
             pct(latenciesNs, 95) / 1e6,
             pct(latenciesNs, 99) / 1e6,
@@ -133,11 +131,11 @@ class BakeOffRunner {
         summary.append("# sqlmq bake-off results\n\n");
         summary.append("Container: ").append(SqlServerContainer.get().getDockerImageName()).append("\n");
         summary.append("Run at: ").append(Instant.now()).append("\n\n");
-        summary.append("Each row is the median of 5 runs.\n\n");
-        summary.append("| Profile | Storage | TPS | delivered | p50 (ms) | p95 (ms) | p99 (ms) |\n");
-        summary.append("|---------|---------|----:|----------:|---------:|---------:|---------:|\n");
+        summary.append("Each row is the median of 5 runs. All runs are on-disk (V014 retired in-memory).\n\n");
+        summary.append("| Profile | TPS | delivered | p50 (ms) | p95 (ms) | p99 (ms) |\n");
+        summary.append("|---------|----:|----------:|---------:|---------:|---------:|\n");
         for (var r : results) {
-            summary.append("| ").append(r.profile()).append(" | ").append(r.storage()).append(" | ")
+            summary.append("| ").append(r.profile()).append(" | ")
                    .append(String.format("%.0f", r.tps())).append(" | ")
                    .append(r.delivered()).append(" | ")
                    .append(String.format("%.2f", r.p50Ms())).append(" | ")
@@ -145,7 +143,6 @@ class BakeOffRunner {
                    .append(String.format("%.2f", r.p99Ms())).append(" |\n");
         }
 
-        // V014: in-memory storage retired — no side-by-side ratios needed.
         var summaryPath = dir.resolve("bench-summary.md");
         Files.writeString(summaryPath, summary.toString());
         System.out.println("\n" + summary);

@@ -8,15 +8,13 @@ public final class BenchmarkProfiles {
     private BenchmarkProfiles() {}
 
     public static List<NamedProfile> all() {
-        // Profile sizing notes (v1 baseline, May 2026): observed sustained throughput
-        // on Testcontainers SQL Server 2022 on an M1 Mac is ~300-500 msgs/sec for both
-        // ondisk and inmemory variants. The original Profile.heavy() (256 producers x
-        // 10000 msgs = 2.56M messages) extrapolates to ~95 minutes per run, or ~16
-        // hours for the 5-run-x-2-storage matrix on heavy alone — and triggered an
-        // OOM kill of the surefire fork mid-run on a 24GB host. Heavy/asymmetric/burst
-        // are scaled down here so the full 5-profile bake-off fits in ~60-90 minutes
-        // total. The resulting numbers are still directly comparable across (ondisk,
-        // inmemory) within each profile, which is what the bake-off is measuring.
+        // Profile sizing notes: observed sustained throughput on Testcontainers SQL Server
+        // 2022 on an M1 Mac is ~300-500 msgs/sec on the on-disk variant. The original
+        // Profile.heavy() (256 producers x 10000 msgs = 2.56M messages) extrapolates to
+        // ~95 minutes per run, or ~16 hours for the 5-run matrix on heavy alone — and
+        // triggered an OOM kill of the surefire fork mid-run on a 24GB host.
+        // Heavy/asymmetric/burst are scaled down here so the full 5-profile bake-off
+        // fits in ~30-45 minutes total against on-disk only.
         return List.of(
             new NamedProfile("light",      Profile.light(),                                  0),
             new NamedProfile("medium",     Profile.medium(),                                 0),

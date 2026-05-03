@@ -11,12 +11,12 @@ import java.util.Map;
  * like {@code "medium"} to a {@link NamedProfile} without dragging in test code.
  *
  * Profile sizing notes (v1 baseline, May 2026): observed sustained throughput
- * on Testcontainers SQL Server 2022 on an M1 Mac is ~300-500 msgs/sec for both
- * ondisk and inmemory variants. The original {@code Profile.heavy()} (256 producers
- * x 10000 msgs = 2.56M messages) extrapolates to ~95 minutes per run, or ~16 hours
- * for the 5-run-x-2-storage matrix on heavy alone — and triggered an OOM kill of
- * the surefire fork mid-run on a 24GB host. Heavy/asymmetric/burst are scaled down
- * here so the full 5-profile bake-off fits in ~60-90 minutes total.
+ * on Testcontainers SQL Server 2022 on an M1 Mac is ~300-500 msgs/sec on the
+ * on-disk variant (the only supported variant since V014). The original
+ * {@code Profile.heavy()} (256 producers x 10000 msgs = 2.56M messages)
+ * extrapolates to ~95 minutes per run and triggered an OOM kill of the
+ * surefire fork mid-run on a 24GB host. Heavy/asymmetric/burst are scaled
+ * down here so the full 5-profile bake-off fits in ~30-45 minutes total.
  */
 public final class BenchProfiles {
     private BenchProfiles() {}

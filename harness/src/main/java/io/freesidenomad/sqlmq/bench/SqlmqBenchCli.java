@@ -152,11 +152,6 @@ public final class SqlmqBenchCli implements Callable<Integer> {
             description = "Approximate JSON payload size in bytes; padded via a \"pad\" field. Default: ${DEFAULT-VALUE}.")
     int messageSize;
 
-    @Option(names = "--storage", paramLabel = "VARIANT",
-            description = "Storage variant(s) to test (repeatable). Only 'ondisk' is supported as of V014 " +
-                          "(in-memory variant retired). Default: ondisk.")
-    List<String> storage;
-
     @Option(names = "--batch-size", defaultValue = "10",
             description = "Consumer read max_count. Default: ${DEFAULT-VALUE}.")
     int batchSize;
@@ -203,9 +198,8 @@ public final class SqlmqBenchCli implements Callable<Integer> {
             validateScanMode();
         }
 
-        // Resolve workload(s) and storage.
+        // Resolve workload(s).
         var resolvedProfiles = isScanMode ? List.<NamedProfile>of() : resolveProfiles();
-        var resolvedStorage = resolveStorage();
         var formats = resolveFormats();
 
         // For scan mode, default --preload to 10000 if unspecified.
@@ -286,9 +280,9 @@ public final class SqlmqBenchCli implements Callable<Integer> {
             var stampFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
 
             if (isScanMode) {
-                runScanMode(client, reporter, resolvedStorage, effectivePreload, stampFmt, outDir, formats);
+                runScanMode(client, reporter, effectivePreload, stampFmt, outDir, formats);
             } else {
-                runProfileMode(client, reporter, resolvedProfiles, resolvedStorage, stampFmt, outDir, formats);
+                runProfileMode(client, reporter, resolvedProfiles, stampFmt, outDir, formats);
             }
 
             var completedAt = Instant.now();
@@ -328,49 +322,47 @@ public final class SqlmqBenchCli implements Callable<Integer> {
     }
 
     private void runProfileMode(SqlmqClient client, BenchReporter reporter,
-                                List<NamedProfile> resolvedProfiles, List<String> resolvedStorage,
+                                List<NamedProfile> resolvedProfiles,
                                 DateTimeFormatter stampFmt, java.nio.file.Path outDir, Set<String> formats)
             throws Exception {
+        // V014/V015 retired the in-memory variant; only on-disk runs now. The "ondisk" label
+        // still appears in stderr/markdown so existing dashboards keep working.
         for (var named : resolvedProfiles) {
-            for (var stor : resolvedStorage) {
-                if (!noProgress) {
-                    System.err.printf("=== %s/%s (%d runs) ===%n", named.name(), stor, runs);
-                }
-                for (int i = 1; i <= runs; i++) {
-                    // For non-scan modes, --initial-depth pre-loads on top of the profile's own
-                    // preloadCount. Sum them so users can stack a profile's burst on a deep queue.
-                    int totalPreload = named.preloadCount() + initialDepth;
-                    var sample = BenchHarness.runOnce(client, named.name(), named.profile(),
-                                                      totalPreload, stor, i);
-                    reporter.add(sample);
-                    progressLine(stampFmt, named.name(), stor, i, sample);
-                    reporter.writeAll(outDir, formats, Instant.now());
-                }
+            if (!noProgress) {
+                System.err.printf("=== %s/ondisk (%d runs) ===%n", named.name(), runs);
+            }
+            for (int i = 1; i <= runs; i++) {
+                // For non-scan modes, --initial-depth pre-loads on top of the profile's own
+                // preloadCount. Sum them so users can stack a profile's burst on a deep queue.
+                int totalPreload = named.preloadCount() + initialDepth;
+                var sample = BenchHarness.runOnce(client, named.name(), named.profile(),
+                                                  totalPreload, i);
+                reporter.add(sample);
+                progressLine(stampFmt, named.name(), "ondisk", i, sample);
+                reporter.writeAll(outDir, formats, Instant.now());
             }
         }
     }
 
     private void runScanMode(SqlmqClient client, BenchReporter reporter,
-                             List<String> resolvedStorage, int effectivePreload,
+                             int effectivePreload,
                              DateTimeFormatter stampFmt, java.nio.file.Path outDir, Set<String> formats)
             throws Exception {
         reporter.enableScanMode("scan");
         // Build a base profile that supplies batch/vt/quiet/messageSize. producers/consumers/msgPerProducer
         // are filled in by runScan per step (producers=0, messagesPerProducer=0, consumers=C).
         var baseProfile = new Profile(0, 0, 0, batchSize, vtSeconds, quietPeriodMs, messageSize);
-        for (var stor : resolvedStorage) {
-            for (int c : scanConsumers) {
-                if (!noProgress) {
-                    System.err.printf("=== scan: consumers=%d storage=%s preload=%d msg=%dB (%d runs) ===%n",
-                                       c, stor, effectivePreload, messageSize, runs);
-                }
-                for (int i = 1; i <= runs; i++) {
-                    var sample = BenchHarness.runScan(client, "scan", baseProfile, c,
-                                                       effectivePreload, stor, i);
-                    reporter.addScan(sample);
-                    progressLine(stampFmt, "scan/c=" + c, stor, i, sample);
-                    reporter.writeAll(outDir, formats, Instant.now());
-                }
+        for (int c : scanConsumers) {
+            if (!noProgress) {
+                System.err.printf("=== scan: consumers=%d storage=ondisk preload=%d msg=%dB (%d runs) ===%n",
+                                   c, effectivePreload, messageSize, runs);
+            }
+            for (int i = 1; i <= runs; i++) {
+                var sample = BenchHarness.runScan(client, "scan", baseProfile, c,
+                                                   effectivePreload, i);
+                reporter.addScan(sample);
+                progressLine(stampFmt, "scan/c=" + c, "ondisk", i, sample);
+                reporter.writeAll(outDir, formats, Instant.now());
             }
         }
     }
@@ -436,30 +428,6 @@ public final class SqlmqBenchCli implements Callable<Integer> {
             out.add(new NamedProfile(np.name(), adjusted, np.preloadCount()));
         }
         return out;
-    }
-
-    private List<String> resolveStorage() {
-        // V014: in-memory storage retired (see V014 header). Only 'ondisk' is
-        // accepted now. We continue to accept 'inmemory' / 'both' as inputs but
-        // silently coerce them to 'ondisk' so existing operator scripts don't
-        // break on upgrade — and emit a stderr warning.
-        if (storage == null || storage.isEmpty()) {
-            return List.of("ondisk");
-        }
-        var out = new LinkedHashSet<String>();
-        for (var s : storage) {
-            switch (s.toLowerCase(Locale.ROOT)) {
-                case "ondisk" -> out.add("ondisk");
-                case "inmemory", "both" -> {
-                    System.err.println("Warning: --storage '" + s + "' is no longer supported (V014 retired " +
-                                       "the in-memory variant); coercing to 'ondisk'.");
-                    out.add("ondisk");
-                }
-                default -> throw new CommandLine.ParameterException(new CommandLine(this),
-                    "Unknown --storage value '" + s + "'. Only 'ondisk' is supported as of V014.");
-            }
-        }
-        return new ArrayList<>(out);
     }
 
     private Set<String> resolveFormats() {

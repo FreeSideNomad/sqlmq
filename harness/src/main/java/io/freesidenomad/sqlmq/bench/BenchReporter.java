@@ -116,6 +116,9 @@ public final class BenchReporter {
     }
 
     private void appendProfileSection(StringBuilder sb) {
+        // V014/V015 retired the in-memory variant; the side-by-side ratio table the
+        // pre-V014 reporter used to emit is gone, but the per-profile median table is
+        // unchanged.
         sb.append("## Profile runs (TPS as headline)\n\n");
         sb.append("Each row is the median of N runs.\n\n");
         sb.append("| Profile | Storage | runs | TPS (median) | delivered | p50 (ms) | p95 (ms) | p99 (ms) |\n");
@@ -130,30 +133,6 @@ public final class BenchReporter {
               .append(String.format(Locale.ROOT, "%.2f", m.p50Ms())).append(" | ")
               .append(String.format(Locale.ROOT, "%.2f", m.p95Ms())).append(" | ")
               .append(String.format(Locale.ROOT, "%.2f", m.p99Ms())).append(" |\n");
-        }
-
-        // ondisk vs inmemory ratio table — only emit if both variants present for at least one profile.
-        var byProfile = new LinkedHashMap<String, Map<String, Bucket>>();
-        for (var b : profileBuckets.values()) byProfile.computeIfAbsent(b.profile, k -> new LinkedHashMap<>()).put(b.storage, b);
-        boolean anyPair = byProfile.values().stream().anyMatch(m -> m.containsKey("ondisk") && m.containsKey("inmemory"));
-        if (anyPair) {
-            sb.append("\n### ondisk vs inmemory ratios\n\n");
-            sb.append("| Profile | ondisk TPS | inmemory TPS | ratio (im/od) | ondisk p99 | inmemory p99 |\n");
-            sb.append("|---------|-----------:|-------------:|--------------:|-----------:|-------------:|\n");
-            for (var entry : byProfile.entrySet()) {
-                var od = entry.getValue().get("ondisk");
-                var im = entry.getValue().get("inmemory");
-                if (od == null || im == null) continue;
-                var odm = od.median();
-                var imm = im.median();
-                double ratio = imm.tps() / Math.max(odm.tps(), 0.001);
-                sb.append("| ").append(entry.getKey()).append(" | ")
-                  .append(String.format(Locale.ROOT, "%.0f", odm.tps())).append(" | ")
-                  .append(String.format(Locale.ROOT, "%.0f", imm.tps())).append(" | ")
-                  .append(String.format(Locale.ROOT, "%.2fx", ratio)).append(" | ")
-                  .append(String.format(Locale.ROOT, "%.2fms", odm.p99Ms())).append(" | ")
-                  .append(String.format(Locale.ROOT, "%.2fms", imm.p99Ms())).append(" |\n");
-            }
         }
         sb.append('\n');
     }
@@ -176,16 +155,12 @@ public final class BenchReporter {
             storages.add(b.storage);
         }
 
-        // Header
+        // Header — only the ondisk column remains as of V014/V015.
         sb.append("| consumers |");
         for (var stor : storages) sb.append(' ').append(stor).append(" TPS |");
-        if (storages.contains("ondisk") && storages.contains("inmemory")) {
-            sb.append(" ratio (im/od) |");
-        }
         sb.append('\n');
         sb.append("|----------:|");
         for (var ignored : storages) sb.append("-----------:|");
-        if (storages.contains("ondisk") && storages.contains("inmemory")) sb.append("--------------:|");
         sb.append('\n');
 
         // Find peak per storage
@@ -207,8 +182,6 @@ public final class BenchReporter {
 
         for (int c : consumerCounts) {
             sb.append("| ").append(c).append(" |");
-            Double odTps = null, imTps = null;
-            boolean anyPeak = false;
             for (var stor : storages) {
                 var bk = byStorage.get(stor).get(c);
                 if (bk == null) {
@@ -216,24 +189,11 @@ public final class BenchReporter {
                 } else {
                     var med = bk.median();
                     double t = med == null ? 0 : med.tps();
-                    if ("ondisk".equals(stor)) odTps = t;
-                    if ("inmemory".equals(stor)) imTps = t;
                     String marker = peakConsumers.get(stor) == c ? "  ← peak" : "";
                     sb.append(' ').append(String.format(Locale.ROOT, "%.0f", t)).append(marker).append(" |");
-                    if (peakConsumers.get(stor) == c) anyPeak = true;
-                }
-            }
-            if (storages.contains("ondisk") && storages.contains("inmemory")) {
-                if (odTps != null && imTps != null && odTps > 0) {
-                    double ratio = imTps / odTps;
-                    sb.append(' ').append(String.format(Locale.ROOT, "%.2fx", ratio)).append(" |");
-                } else {
-                    sb.append("  |");
                 }
             }
             sb.append('\n');
-            // Suppress unused variable warning while keeping logic obvious
-            if (anyPeak) { /* peak markers are inline above */ }
         }
 
         // Peak summary line
