@@ -11,7 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  harness:
+    name: harness (mvn verify)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,9 +27,73 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('harness/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2
+          key: ${{ runner.os }}-m2-harness-${{ hashFiles('harness/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2-harness
 
       - name: Run tests
         working-directory: harness
         run: mvn -B verify
+
+  java-client:
+    name: clients/java (mvn verify)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-java-client-${{ hashFiles('clients/java/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2-java-client
+
+      - name: Run tests
+        working-directory: clients/java
+        run: mvn -B verify
+
+  python-client:
+    # The Python client uses pyodbc, which needs the Microsoft ODBC driver +
+    # unixODBC headers installed on the runner. We install msodbcsql18 from
+    # Microsoft's official repo, then run pytest with Testcontainers spinning
+    # up SQL Server for us.
+    name: clients/python (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Microsoft ODBC Driver 18 + unixODBC dev headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl gnupg apt-transport-https
+          # See: https://learn.microsoft.com/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+          UBUNTU_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
+          echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/$(. /etc/os-release && echo $VERSION_ID)/prod $UBUNTU_CODENAME main" | sudo tee /etc/apt/sources.list.d/microsoft-prod.list > /dev/null
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-python-client-${{ hashFiles('clients/python/pyproject.toml') }}
+          restore-keys: ${{ runner.os }}-pip-python-client
+
+      - name: Install package + dev deps
+        working-directory: clients/python
+        run: pip install -e '.[dev]'
+
+      - name: Run pytest
+        working-directory: clients/python
+        run: pytest -v
