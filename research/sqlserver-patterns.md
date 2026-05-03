@@ -195,6 +195,30 @@ The feature surface includes:
 
 **Ignore for new work.** Service Broker solves a richer problem than `pgmq` does (ordered conversations between distributed services, with activation), at the cost of a 2008-vintage object model, no Azure SQL Database support, and a conceptual surface area larger than the queue we are building. For a pgmq port the only thing we genuinely want from Service Broker is `WAITFOR (RECEIVE …)` for long-polling, and we cannot get that without dragging in queues/services/contracts. Roll our own table-as-queue per §1, and make peace with client-side polling for the `read_with_poll` semantics (§9). Revisit Service Broker only if requirements grow toward "ordered conversations with activation" — at which point it does become the right tool.
 
+### 2.4 2026-05-03 reaffirmation: explicit edition matrix + corrected framing
+
+**Edition availability** (from [SQL Server 2022 editions](https://learn.microsoft.com/en-us/sql/sql-server/editions-and-components-of-sql-server-2022?view=sql-server-ver16), verified 2026-05-03):
+
+| Edition / SKU | Service Broker |
+|---|---|
+| SQL Server 2022 Enterprise | ✅ Yes |
+| SQL Server 2022 Standard | ✅ Yes |
+| SQL Server 2022 Web | ❌ No |
+| SQL Server 2022 Express w/ Advanced Services | ❌ No |
+| SQL Server 2022 Express | ❌ No |
+| Azure SQL Database (single DB) | ❌ No |
+| Azure SQL Managed Instance | ✅ Yes (with restrictions noted in §2.2) |
+
+A hard Service Broker dependency excludes: all Express tier (the free SKU, common in dev / edge), Web edition, and Azure SQL DB single-DB. That conflicts directly with the project's first principle (*"Portable and lightweight is the whole point"*) and is sufficient justification on its own.
+
+**Corrected framing.** §2.1–§2.2 say things like *"MS hasn't done a refresh of the conceptual material since 2008-R2"* and *"the feature is in maintenance mode."* Both are directionally accurate but easy to mis-read as "deprecated." Service Broker IS still maintained, ships in SQL Server 2022, and works as documented — it's **stable**, not abandoned. The exclusion was based on portability + workload fit, not deprecation.
+
+**Post-bake-off retrospective.** The V012/V013 in-memory misadventure (see `docs/superpowers/archive/`) indirectly validated this call: reaching for SQL Server's "advanced" features (memory-opt + native compilation) without matching pgmq's read-with-VT workload pattern made things measurably worse, not better. Service Broker would have taught the same lesson at much higher integration cost — its dialog/conversation model is a poorer fit for pgmq's send/read/delete shape than memory-optimized tables were for parallel competing-consumer reads, and we can't even measure the trade-off without committing to ~5 DDL objects per queue plus certificates for cross-instance.
+
+**Industry precedent confirms the call.** None of the major SQL-Server-backed queue libraries (Hangfire, NServiceBus, Wolverine, Quartz.NET — see `research/sqlserver-longpoll.md` for source citations) use Service Broker for the queue-storage pattern. They all use client-side polling against table-as-queue, the same approach sqlmq landed on independently.
+
+**When this verdict should be revisited:** if a future requirement adds *ordered conversations between distributed services with activation* (which pgmq doesn't have either), Service Broker becomes the right tool and this exclusion no longer holds. For the current pgmq-port scope it stays excluded.
+
 ---
 
 ## 3. Memory-optimized tables (In-Memory OLTP / "Hekaton") for queues
